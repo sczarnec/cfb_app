@@ -1,0 +1,910 @@
+---
+title: "CFB Prediction Project"
+author: "_____"
+date: "2024-09-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages
+```{r}
+# packages
+library(tidyverse)
+library(cfbfastR)
+library(ggplot2)
+library(RcppRoll)
+library(zoo)
+
+
+```
+
+
+## Load Data
+```{r}
+
+current_year = 2024
+
+
+# load cfb pbp data from 2023-24 (we already modeled on other data, just want stuff we didnt model)
+cfb_data_orig = load_cfb_pbp(seasons = c(2023:current_year)) #original df
+
+
+cfb_data = cfb_data_orig %>% # df we can change
+  filter(year >= 2024) %>% 
+  filter(year > 2024 | week >= 6) %>% 
+  filter(!play_type %in% c('End Period', 'End of Half', 'Timeout')) %>%  # these rows don't contain plays and lead to NAs, filter out 
+  # teams that didn't merge, make the same with game info
+  mutate(pos_team = recode(pos_team, 'Appalachian State' = 'App State',
+                            'Connecticut' = 'UConn',
+                            'Sam Houston State' = 'Sam Houston',
+                            'Louisiana Monroe' = 'UL Monroe')) %>% 
+  mutate(def_pos_team = recode(def_pos_team, 'Appalachian State' = 'App State',
+                            'Connecticut' = 'UConn',
+                            'Sam Houston State' = 'Sam Houston',
+                            'Louisiana Monroe' = 'UL Monroe'))
+
+
+# add row to calc prev stats for projected games in the future
+# need to add to pbp or else won't create a col for that week
+added_week = max(cfb_data[cfb_data$year == current_year,]$week) + 1
+new_rows = cfb_data_orig %>% 
+  filter(year == current_year) %>% 
+  mutate(week = added_week) 
+new_rows[,c(3:7,10:58,60:185,187,189:330)] = 0
+cfb_data = rbind(cfb_data, new_rows)
+
+
+cfb_data = cfb_data %>% 
+  mutate(play_count = 1) # new col, easier to count plays later during aggregation
+  
+
+
+
+
+
+### Function to Load data where you can only load one year at a time, returns one df with all
+## ARGS:
+## call = what function are you using to call data, don't include (), e.g. cfbd_game_info
+## year_start = first year of data you want, e.g. = 2015
+## year_end = last year of data you want, e.g. 2024
+
+# create function
+load_data_func = function(call, year_start, year_end) {
+  # rename function from argument
+  fun = function(yr){
+    result = call(year = yr)
+    return(result)
+  }
+  # loop to load data
+  for (i in c(year_start:year_end)){
+    # this one creates the df for the first year in the loop
+    if (i == year_start){
+      full_df = fun(i)
+    # this one binds other dfs to full_df
+    } else{
+        df = fun(i)
+        full_df = rbind(full_df, df)
+  }
+  }
+  # return one df with all years of data
+  return(full_df)
+}
+
+
+
+
+# load game info for those years
+game_info_orig = load_data_func(cfbd_game_info, 2023, current_year) # original df
+game_info = game_info_orig %>% 
+  filter(season >= 2024) %>% 
+  filter(season > 2024 | week >= 6) # df we can change
+
+
+
+
+# load betting info for those years
+# NOTE: this dataset does not have data before 2019
+# it's fine because we are just using this to compare our results to Vegas, nothing critical
+betting_lines_orig = load_data_func(cfbd_betting_lines, 2019, current_year) # original df
+betting_lines = betting_lines_orig # df we can change
+
+
+
+
+
+
+```
+
+
+
+Rolling Per Game Function
+```{r}
+# Function to compile rolling metric variables per game
+# meant for metrics that should be calculated at per game level
+
+
+### FUNCTION ARGS EXPLAINED
+# metrics: input list of desired metrics as they appear in cfb_data columns, e.g. c(EPA, wpa, ...)
+# n_games: how many games for rolling sum to go back?, e.g. 5
+# input_data: what data are we using (should always be cfb_data or filtered version), e.g. cfb_data
+
+
+
+# Define function
+rolling_pg_compiler = function(metrics, n_games, input_data){
+  
+  
+  
+  # Offensive Metrics
+  
+  
+  
+  # create list to store created dfs
+  df_list = c()
+
+  # for loop for each off metric
+  for (i in metrics) {
+    # unique df and col names for each iteration
+    new_df = paste0(i, '_df')
+    new_name = paste0('rol_', i, "_pg")
+  
+    # create new df
+    df = input_data %>% 
+      filter(!is.na(!!sym(i))) %>% # take out NA rows for metric before summing
+      group_by(pos_team, year, week) %>% # group by team/year/week 
+      summarize(tot_stat = sum(!!sym(i))) %>% # sum the stat
+      arrange(pos_team, year, week) %>% # sort by each levels, get weeks in order
+      group_by(pos_team, year) %>% # define window of team and year
+      
+      # calculate lag of the stat (rolling function includes current row, need the lag)
+      # if the previous row's metric is NA (haven't played a game yet), then make it 0 for the sum calc
+      # make another lag column, will be 1 if it is not NA and 0 if it is NA
+      # now, we have the previous week's metric (if played) and whether a game was played last week
+      mutate(lag_stat = ifelse(is.na(lag(tot_stat)),0,
+                               lag(tot_stat)),
+             lag_game = ifelse(is.na(lag(tot_stat)),0,
+                               1)) %>% 
+      
+      # use partial rollapplyr to calculate the right-aligned rolling sum of metric over last ___ games
+      # then divide by the rolling sum of the lag_game col, telling us how many games played over period
+      # standardizes it in case a team only played two games before this season but it's a 3 game roll mean
+      mutate(!!sym(new_name) := rollapplyr(lag_stat, width = n_games, FUN = sum,
+                                           partial = TRUE, align = 'right') /
+                                rollapplyr(lag_game, width = n_games, FUN = sum,
+                                           partial = TRUE, align = 'right')) %>%
+      
+      select(-c(tot_stat, lag_stat, lag_game)) # get rid of useless cols
+  
+    df_list[[paste0(i, '_df')]] <- df # add to df list
+  
+
+  }
+
+
+  # select the first df from the list
+  off_df = data.frame(df_list[1])
+  # adjust cols to have same names as others (df list messed up)
+  for (i in c(1:length(colnames(off_df)))) {
+    colnames(off_df)[i] = gsub(".*\\.", "", colnames(off_df)[i])
+  }
+# loop to join dfs from list
+  for (i in df_list[-1]) {
+    # select df to join
+    joining_df = i
+    # adjust cols to have same names as others
+    for (i in c(1:length(colnames(joining_df)))) {
+      colnames(joining_df)[i] = gsub(".*\\.", "", colnames(joining_df)[i])
+    }
+    # join to one df
+    off_df = left_join(off_df, joining_df, by = c('pos_team', 'year', 'week'))
+  }
+
+  # rename pos_team so we can later merge with def stats
+  off_df = off_df %>% 
+    rename(team = pos_team)
+  
+  # add _off to cols for when we merge this to def
+  colnames(off_df)[4:length(colnames(off_df))] = paste0(colnames(off_df)[4:length(colnames(off_df))], "_off")
+  
+  
+  
+  
+  
+  
+  
+  # Defensive metrics 
+  
+  
+  
+  # create list to store created defensive dfs
+  df_list = c()
+
+  # for loop for each off metric
+  for (i in metrics) {
+    # unique df and col names for each iteration
+    new_df = paste0(i, '_df')
+    new_name = paste0('rol_', i, "_pg")
+  
+    # create new df
+    df = input_data %>% 
+      filter(!is.na(!!sym(i))) %>% # take out NA rows for metric before summing
+      group_by(def_pos_team, year, week) %>% # group by team/year/week 
+      summarize(tot_stat = sum(!!sym(i))) %>% # sum the stat
+      arrange(def_pos_team, year, week) %>% # sort by each level
+      group_by(def_pos_team, year) %>% # define window of team and year
+      
+      # calculate lag of the stat (rolling function includes current row, need the lag)
+      # if the previous row's metric is NA (haven't played a game yet), then make it 0 for the sum calc
+      # make another lag column, will be 1 if it is not NA and 0 if it is NA
+      # now, we have the previous week's metric (if played) and whether a game was played last week
+      mutate(lag_stat = ifelse(is.na(lag(tot_stat)),0,
+                               lag(tot_stat)),
+             lag_game = ifelse(is.na(lag(tot_stat)),0,
+                               1)) %>% 
+      
+      # use partial rollapplyr to calculate the right-aligned rolling sum of metric over last ___ games
+      # then divide by the rolling sum of the lag_game col, telling us how many games played over period
+      # standardizes it in case a team only played two games before this season but it's a 3 game roll mean
+      mutate(!!sym(new_name) := rollapplyr(lag_stat, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right') /
+                                rollapplyr(lag_game, width = n_games, FUN = sum,
+                                           partial = TRUE, align = 'right')) %>%
+      
+      select(-c(tot_stat, lag_stat, lag_game)) # get rid of useless cols
+  
+    df_list[[paste0(i, '_df')]] <- df # add to df list
+  
+
+  }
+
+
+  # select the first df from the list
+  def_df = data.frame(df_list[1])
+  # adjust cols to have same names as others (df list messed up)
+  for (i in c(1:length(colnames(def_df)))) {
+    colnames(def_df)[i] = gsub(".*\\.", "", colnames(def_df)[i])
+  }
+# loop to join dfs from list
+  for (i in df_list[-1]) {
+    # select df to join
+    joining_df = i
+    # adjust cols to have same names as others
+    for (i in c(1:length(colnames(joining_df)))) {
+      colnames(joining_df)[i] = gsub(".*\\.", "", colnames(joining_df)[i])
+    }
+    # join to one df
+    def_df = left_join(def_df, joining_df, by = c('def_pos_team', 'year', 'week'))
+  }
+   
+  # change def_pos_team for when we merge to off metrics
+  def_df = def_df %>% 
+    rename(team = def_pos_team)
+  
+  # add _def to cols so we differentiate from off metrics when merged
+  colnames(def_df)[4:length(colnames(def_df))] = paste0(colnames(def_df)[4:length(colnames(def_df))], "_def")
+  
+  
+  
+  
+  
+  # Join Off and Def Metric dfs
+  
+  # left join
+  full_df = left_join(off_df, def_df, by = c("team", "year", "week"))
+  
+  # rename game_id col, got messed up, and rename year to season for later merging
+  colnames(full_df)[2] = "season"
+  
+  # return value is the one df with all rolling sums
+  return(full_df)
+  
+}
+
+
+
+```
+
+
+
+Rolling Per Play Function
+```{r}
+# Function to compile rolling metric variables per play
+# meant for metrics that should be aggregated at per play level
+
+
+### FUNCTION ARGS EXPLAINED
+# metrics: input list of desired metrics as they appear in cfb_data columns, e.g. c(EPA, wpa, ...)
+# n_games: how many games for rolling sum to go back?, e.g. 5
+# input_data: what data are we using (should always be cfb_data or filtered version), e.g. cfb_data
+
+
+
+# Define function
+rolling_pp_compiler = function(metrics, n_games, input_data){
+  
+  
+  
+  # Offensive Metrics
+  
+  
+  
+  # create list to store created dfs
+  df_list = c()
+
+  # for loop for each off metric
+  for (i in metrics) {
+    # unique df and col names for each iteration
+    new_df = paste0(i, '_df')
+    new_name = paste0('rol_', i, "_pp")
+  
+    # create new df
+    df = input_data %>% 
+      filter(!is.na(!!sym(i))) %>% # take out NA rows for metric before summing
+      group_by(pos_team, year, week) %>% # group by team/year/week 
+      summarize(tot_stat = sum(!!sym(i)), # sum the stat
+                tot_plays = sum(play_count)) %>% # sum the play count to calc per play later
+      arrange(pos_team, year, week) %>% # sort by each level
+      group_by(pos_team, year) %>% # define window of team and year
+      
+      # calculate lag of the stat (rolling function includes current row, need the lag)
+      # if the previous row's metric is NA (haven't played a game yet), then make it 0 for the sum calc
+      # if the previous row's plays is NA (haven't played a game yet), then make it 0 for the sum calc
+      # now, we have the previous week's metric and plays
+      mutate(lag_stat = ifelse(is.na(lag(tot_stat)),0,
+                               lag(tot_stat)),
+             lag_plays = ifelse(is.na(lag(tot_plays)),0,
+                               lag(tot_plays))) %>% 
+      
+      # use partial rollapplyr to calculate the right-aligned rolling sum of metric over last ___ games
+      # then divide by the rolling sum of the lag_plays col, telling us how many plays occurred over period
+      # standardizes it because play counts amongst teams vary a lot
+      # if no games were played, they will return an NaN value
+      # if some but not all games in the period were played, the 0's won't affect any calculations
+      mutate(!!sym(new_name) := rollapplyr(lag_stat, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right') / 
+                                rollapplyr(lag_plays, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right')) %>%  
+      
+      select(-c(tot_stat, tot_plays, lag_stat, lag_plays)) # get rid of useless cols
+  
+    df_list[[paste0(i, '_df')]] <- df # add to df list
+  
+
+  }
+
+
+  # select the first df from the list
+  off_df = data.frame(df_list[1])
+  # adjust cols to have same names as others (df list messed up)
+  for (i in c(1:length(colnames(off_df)))) {
+    colnames(off_df)[i] = gsub(".*\\.", "", colnames(off_df)[i])
+  }
+# loop to join dfs from list
+  for (i in df_list[-1]) {
+    # select df to join
+    joining_df = i
+    # adjust cols to have same names as others
+    for (i in c(1:length(colnames(joining_df)))) {
+      colnames(joining_df)[i] = gsub(".*\\.", "", colnames(joining_df)[i])
+    }
+    # join to one df
+    off_df = left_join(off_df, joining_df, by = c('pos_team', 'year', 'week'))
+  }
+
+  # rename pos_team so we can later merge with def stats
+  off_df = off_df %>% 
+    rename(team = pos_team)
+  
+  # add _off to cols for when we merge this to def
+  colnames(off_df)[4:length(colnames(off_df))] = paste0(colnames(off_df)[4:length(colnames(off_df))], "_off")
+  
+  
+  
+  
+  
+  
+  
+  # Defensive metrics 
+  
+  
+  
+  # create list to store created defensive dfs
+  df_list = c()
+
+  # for loop for each off metric
+  for (i in metrics) {
+    # unique df and col names for each iteration
+    new_df = paste0(i, '_df')
+    new_name = paste0('rol_', i, "_pp")
+  
+    # create new df
+    df = input_data %>% 
+      filter(!is.na(!!sym(i))) %>% # take out NA rows for metric before summing
+      group_by(def_pos_team, year, week) %>% # group by team/year/week 
+      summarize(tot_stat = sum(!!sym(i)), # sum the stat
+                tot_plays = sum(play_count)) %>% # sum the play count to calc per play later
+      arrange(def_pos_team, year, week) %>% # sort by each level
+      group_by(def_pos_team, year) %>% # define window of team and year
+      
+      # calculate lag of the stat (rolling function includes current row, need the lag)
+      # if the previous row's metric is NA (haven't played a game yet), then make it 0 for the sum calc
+      # if the previous row's plays is NA (haven't played a game yet), then make it 0 for the sum calc
+      # now, we have the previous week's metric and plays
+      mutate(lag_stat = ifelse(is.na(lag(tot_stat)),0,
+                               lag(tot_stat)),
+             lag_plays = ifelse(is.na(lag(tot_plays)),0,
+                               lag(tot_plays))) %>% 
+      
+      # use partial rollapplyr to calculate the right-aligned rolling sum of metric over last ___ games
+      # then divide by the rolling sum of the lag_plays col, telling us how many plays occurred over period
+      # standardizes it because play counts amongst teams vary a lot
+      # if no games were played, they will return an NaN value
+      # if some but not all games in the period were played, the 0's won't affect any calculations
+      mutate(!!sym(new_name) := rollapplyr(lag_stat, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right') / 
+                                rollapplyr(lag_plays, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right')) %>%
+      
+      select(-c(tot_stat, tot_plays, lag_stat, lag_plays)) # get rid of useless cols
+  
+    df_list[[paste0(i, '_df')]] <- df # add to df list
+  
+
+  }
+
+
+  # select the first df from the list
+  def_df = data.frame(df_list[1])
+  # adjust cols to have same names as others (df list messed up)
+  for (i in c(1:length(colnames(def_df)))) {
+    colnames(def_df)[i] = gsub(".*\\.", "", colnames(def_df)[i])
+  }
+# loop to join dfs from list
+  for (i in df_list[-1]) {
+    # select df to join
+    joining_df = i
+    # adjust cols to have same names as others
+    for (i in c(1:length(colnames(joining_df)))) {
+      colnames(joining_df)[i] = gsub(".*\\.", "", colnames(joining_df)[i])
+    }
+    # join to one df
+    def_df = left_join(def_df, joining_df, by = c('def_pos_team', 'year', 'week'))
+  }
+   
+  # change def_pos_team for when we merge to off metrics
+  def_df = def_df %>% 
+    rename(team = def_pos_team)
+  
+  # add _def to cols so we differentiate from off metrics when merged
+  colnames(def_df)[4:length(colnames(def_df))] = paste0(colnames(def_df)[4:length(colnames(def_df))], "_def")
+  
+  
+  
+  
+  
+  # Join Off and Def Metric dfs
+  
+  # left join
+  full_df = left_join(off_df, def_df, by = c("team", "year", "week"))
+  
+  # rename game_id col, got messed up, and rename year to season for later merging
+  colnames(full_df)[2] = "season"
+  
+  # return value is the one df with all rolling sums
+  return(full_df)
+  
+}
+
+
+
+```
+
+
+
+
+Rolling Grouped Per Play Function
+```{r}
+# Function to compile rolling metric variables per play at a lower grouped level
+# meant for metrics that should be aggregated at per play level
+# data can be grouped here (e.g. create a new df that filters for pass = 1, now this calculates pp stats on pass plays only, then do one for runs to get the flip side)
+
+
+### FUNCTION ARGS EXPLAINED
+# metrics: input list of desired metrics as they appear in cfb_data columns, e.g. c(EPA, wpa, ...)
+# n_games: how many games for rolling sum to go back?, e.g. 5
+# input_data: what data are we using (should always be cfb_data or filtered version), e.g. cfb_data
+# group_abbrev: abbreviated name of the group for colnames, e.g. "rz" (to signify red zone plays only)
+
+
+
+# Define function
+rolling_gpp_compiler = function(metrics, n_games, input_data, group_abbrev){
+  
+  
+  
+  
+  # Offensive Metrics
+  
+  
+  
+  # create list to store created dfs
+  df_list = c()
+
+  # for loop for each off metric
+  for (i in metrics) {
+    # unique df and col names for each iteration
+    new_df = paste0(i, '_df')
+    new_name = paste0('rol_', group_abbrev, "_", i, "_pp")
+  
+    # create new df
+    df = input_data %>% 
+      filter(!is.na(!!sym(i))) %>% # take out NA rows for metric before summing
+      group_by(pos_team, year, week) %>% # group by team/year/week 
+      summarize(tot_stat = sum(!!sym(i)), # sum the stat
+                tot_plays = sum(play_count)) %>% # sum the play count to calc per play later
+      arrange(pos_team, year, week) %>% # sort by each level
+      group_by(pos_team, year) %>% # define window of team and year
+      
+      # calculate lag of the stat (rolling function includes current row, need the lag)
+      # if the previous row's metric is NA (haven't played a game yet), then make it 0 for the sum calc
+      # if the previous row's plays is NA (haven't played a game yet), then make it 0 for the sum calc
+      # now, we have the previous week's metric and plays
+      
+      mutate(lag_stat = ifelse(is.na(lag(tot_stat)),0,
+                               lag(tot_stat)),
+             lag_plays = ifelse(is.na(lag(tot_plays)),0,
+                               lag(tot_plays))) %>% 
+      
+      # use partial rollapplyr to calculate the right-aligned rolling sum of metric over last ___ games
+      # then divide by the rolling sum of the lag_plays col, telling us how many plays occurred over period
+      # standardizes it because play counts amongst teams vary a lot
+      # if no games were played, they will return an NaN value
+      # if some but not all games in the period were played, the 0's won't affect any calculations
+      mutate(!!sym(new_name) := rollapplyr(lag_stat, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right') / 
+                                rollapplyr(lag_plays, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right')) %>%  
+      
+      select(-c(tot_stat, tot_plays, lag_stat, lag_plays)) # get rid of useless cols
+  
+    df_list[[paste0(i, '_df')]] <- df # add to df list
+  
+
+  }
+
+
+  # select the first df from the list
+  off_df = data.frame(df_list[1])
+  # adjust cols to have same names as others (df list messed up)
+  for (i in c(1:length(colnames(off_df)))) {
+    colnames(off_df)[i] = gsub(".*\\.", "", colnames(off_df)[i])
+  }
+# loop to join dfs from list
+  for (i in df_list[-1]) {
+    # select df to join
+    joining_df = i
+    # adjust cols to have same names as others
+    for (i in c(1:length(colnames(joining_df)))) {
+      colnames(joining_df)[i] = gsub(".*\\.", "", colnames(joining_df)[i])
+    }
+    # join to one df
+    off_df = left_join(off_df, joining_df, by = c('pos_team', 'year', 'week'))
+  }
+
+  # rename pos_team so we can later merge with def stats
+  off_df = off_df %>% 
+    rename(team = pos_team)
+  
+  # add _off to cols for when we merge this to def
+  colnames(off_df)[4:length(colnames(off_df))] = paste0(colnames(off_df)[4:length(colnames(off_df))], "_off")
+  
+  
+  
+  
+  
+  
+  
+  # Defensive metrics 
+  
+  
+  
+  # create list to store created defensive dfs
+  df_list = c()
+
+  # for loop for each off metric
+  for (i in metrics) {
+    # unique df and col names for each iteration
+    new_df = paste0(i, '_df')
+    new_name = paste0('rol_', group_abbrev, "_", i, "_pp")
+  
+    # create new df
+    df = input_data %>% 
+      filter(!is.na(!!sym(i))) %>% # take out NA rows for metric before summing
+      group_by(def_pos_team, year, week) %>% # group by team/year/week 
+      summarize(tot_stat = sum(!!sym(i)), # sum the stat
+                tot_plays = sum(play_count)) %>% # sum the play count to calc per play later
+      arrange(def_pos_team, year, week) %>% # sort by each level
+      group_by(def_pos_team, year) %>% # define window of team and year
+      
+      # calculate lag of the stat (rolling function includes current row, need the lag)
+      # if the previous row's metric is NA (haven't played a game yet), then make it 0 for the sum calc
+      # if the previous row's plays is NA (haven't played a game yet), then make it 0 for the sum calc
+      # now, we have the previous week's metric and plays
+      mutate(lag_stat = ifelse(is.na(lag(tot_stat)),0,
+                               lag(tot_stat)),
+             lag_plays = ifelse(is.na(lag(tot_plays)),0,
+                               lag(tot_plays))) %>%
+      
+      # use partial rollapplyr to calculate the right-aligned rolling sum of metric over last ___ games
+      # then divide by the rolling sum of the lag_plays col, telling us how many plays occurred over period
+      # standardizes it because play counts amongst teams vary a lot
+      # if no games were played, they will return an NaN value
+      # if some but not all games in the period were played, the 0's won't affect any calculations
+      mutate(!!sym(new_name) := rollapplyr(lag_stat, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right') / 
+                                rollapplyr(lag_plays, width = n_games, FUN = sum, 
+                                           partial = TRUE, align = 'right')) %>%
+      
+      select(-c(tot_stat, tot_plays, lag_stat, lag_plays)) # get rid of useless cols
+  
+    df_list[[paste0(i, '_df')]] <- df # add to df list
+  
+
+  }
+
+
+  # select the first df from the list
+  def_df = data.frame(df_list[1])
+  # adjust cols to have same names as others (df list messed up)
+  for (i in c(1:length(colnames(def_df)))) {
+    colnames(def_df)[i] = gsub(".*\\.", "", colnames(def_df)[i])
+  }
+# loop to join dfs from list
+  for (i in df_list[-1]) {
+    # select df to join
+    joining_df = i
+    # adjust cols to have same names as others
+    for (i in c(1:length(colnames(joining_df)))) {
+      colnames(joining_df)[i] = gsub(".*\\.", "", colnames(joining_df)[i])
+    }
+    # join to one df
+    def_df = left_join(def_df, joining_df, by = c('def_pos_team', 'year', 'week'))
+  }
+   
+  # change def_pos_team for when we merge to off metrics
+  def_df = def_df %>% 
+    rename(team = def_pos_team)
+  
+  # add _def to cols so we differentiate from off metrics when merged
+  colnames(def_df)[4:length(colnames(def_df))] = paste0(colnames(def_df)[4:length(colnames(def_df))], "_def")
+  
+  
+  
+  
+  
+  # Join Off and Def Metric dfs
+  
+  # left join
+  full_df = left_join(off_df, def_df, by = c("team", "year", "week"))
+  
+  # rename game_id col, got messed up, and rename year to season for later merging
+  colnames(full_df)[2] = "season"
+  
+  # return value is the one df with all rolling sums
+  return(full_df)
+  
+}
+
+
+
+```
+
+
+
+PbP Prep
+```{r}
+
+# call desired per game metrics with rolling mean of 3 weeks
+rolling_pg_orig = rolling_pg_compiler(c("turnover", "touchdown", "sack", "punt", "fg_made", 
+                                           "penalty_flag"), 3, cfb_data)
+
+# call desired per play metrics with rolling mean of 3 weeks
+rolling_pp_orig = rolling_pp_compiler(c("EPA", "wpa", "success"), 3, cfb_data)
+
+# call desired per play metrics filtered for redzone? with rolling mean of 3 weeks
+cfb_data_rz = cfb_data %>% filter(rz_play == 1)
+rolling_rz_orig = rolling_gpp_compiler(c("EPA", "wpa", "success"), 3, cfb_data_rz, "rz")
+
+# call desired per play metrics filtered for rush? with rolling mean of 3 weeks
+cfb_data_run = cfb_data %>% filter(rush == 1)
+rolling_run_orig = rolling_gpp_compiler(c("EPA", "wpa", "success"), 3, cfb_data_run, "run")
+
+# call desired per play metrics filtered for pass? with rolling mean of 3 weeks
+cfb_data_pass = cfb_data %>% filter(pass == 1)
+rolling_pass_orig = rolling_gpp_compiler(c("EPA", "wpa", "success"), 3, cfb_data_pass, "pass")
+
+# join all metrics
+joined_metrics = left_join(rolling_pg_orig, rolling_pp_orig, by = c("team", "season", "week"))
+joined_metrics = left_join(joined_metrics, rolling_rz_orig, by = c("team", "season", "week"))
+joined_metrics = left_join(joined_metrics, rolling_run_orig, by = c("team", "season", "week"))
+joined_metrics = left_join(joined_metrics, rolling_pass_orig, by = c("team", "season", "week"))
+
+
+
+```
+
+
+GbG Prep
+```{r}
+
+# select important columns from game_info and create needed cols
+game_data = game_info %>%
+  select(game_id, season, week, season_type, completed, neutral_site, conference_game, home_team,
+         home_conference, home_division, home_points, away_team, away_conference,
+         away_division, away_points) %>% 
+  mutate(total_points = home_points + away_points, # eventual response var
+         home_point_diff = home_points - away_points,# eventual response var
+         away_point_diff = away_points - home_points, # eventual response var
+         home_win = ifelse(home_points > away_points, 1, 0), # eventual response var and predictor
+         away_win = ifelse(away_points > home_points, 1, 0)) # eventual response var and predictor
+
+
+# just make home teams t1
+home_df = game_data %>% 
+  rename(t1_team = home_team,
+         t1_conference = home_conference,
+         t1_division = home_division,
+         t1_points = home_points,
+         t1_point_diff = home_point_diff,
+         t1_win = home_win,
+         t2_team = away_team,
+         t2_conference = away_conference,
+         t2_division = away_division,
+         t2_points = away_points,
+         t2_point_diff = away_point_diff,
+         t2_win = away_win) %>% 
+  mutate(t1_home = 1) # signifies that t1 is home
+
+
+
+# just make away teams t1
+away_df = home_df %>% 
+  rename(t2_team = t1_team,
+         t2_conference = t1_conference,
+         t2_division = t1_division,
+         t2_points = t1_points,
+         t2_point_diff = t1_point_diff,
+         t2_win = t1_win,
+         t1_team = t2_team,
+         t1_conference = t2_conference,
+         t1_division = t2_division,
+         t1_points = t2_points,
+         t1_point_diff = t2_point_diff,
+         t1_win = t2_win) %>% 
+  mutate(t1_home = 0) # signifies that t1 is away
+
+
+
+# bind home and away dfs and create rolling predictors from them
+t1_game_info_metrics= rbind(home_df, away_df) %>% 
+  select(-t2_point_diff) %>% # don't need anymore
+  arrange(t1_team, season, week) %>% # sort before lag calc
+  group_by(t1_team, season) %>% # group before lag calc
+  
+  # create lag win and loss stat cols for team 1, returning 0 if they didn't play a game yet
+  mutate(lag_win = ifelse(is.na(lag(t1_win)), 0, lag(t1_win)),
+         lag_loss = ifelse(is.na(lag(t2_win)), 0, lag(t2_win))) %>% 
+  
+  # calculate rolling totals of wins and losses for the last 3 games and all season
+  mutate(rol_win_l3 := rollapplyr(lag_win, width = 3, FUN = sum, 
+                                           partial = TRUE, align = 'right'),
+         rol_loss_l3 := rollapplyr(lag_loss, width = 3, FUN = sum, 
+                                           partial = TRUE, align = 'right'),
+         rol_win_yr := rollapplyr(lag_win, width = 20, FUN = sum, 
+                                           partial = TRUE, align = 'right'),
+         rol_loss_yr := rollapplyr(lag_loss, width = 20, FUN = sum, 
+                                           partial = TRUE, align = 'right')) %>% 
+  
+  # calculate records over these periods to standardize
+  mutate(t1_rol_record_l3 = rol_win_l3 / (rol_win_l3 + rol_loss_l3),
+         t1_rol_record_yr = rol_win_yr / (rol_win_yr + rol_loss_yr)) %>% 
+  
+  # calculate lag points and points against stat cols for t1, returning 0 if they didn't play yet
+  # also create lag_game, signifying if a team has played a game yet
+  mutate(lag_points = ifelse(is.na(lag(t1_points)), 0, lag(t1_points)),
+         lag_pa = ifelse(is.na(lag(t2_points)), 0, lag(t2_points)),
+         lag_game = ifelse(is.na(lag(t1_points)), 0, 1)) %>% 
+  
+  # divide rolling points/pa by games to get standardized points/pa metric over last 3 games and season
+  mutate(t1_rol_points_pg_l3 :=  rollapplyr(lag_points, width = 3, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right') /
+                        rollapplyr(lag_game, width = 3, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right'),
+         t1_rol_pa_pg_l3 := rollapplyr(lag_pa, width = 3, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right') /
+                        rollapplyr(lag_game, width = 3, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right'),
+         t1_rol_points_pg_yr :=  rollapplyr(lag_points, width = 20, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right') /
+                        rollapplyr(lag_game, width = 20, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right'),
+         t1_rol_pa_pg_yr := rollapplyr(lag_pa, width = 20, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right') /
+                        rollapplyr(lag_game, width = 20, FUN = sum, # right rolling sum using lag
+                                           partial = TRUE, align = 'right')) %>% 
+  
+  select(-c(lag_win, lag_loss, rol_win_l3, rol_loss_l3, rol_win_yr, rol_loss_yr, lag_points, 
+            lag_pa, lag_game, t2_win)) # get rid of useless cols
+
+
+# create df that changes t1 metrics into t2 metrics
+t2_game_info_metrics = t1_game_info_metrics %>% 
+  select(season, week, t1_team, t1_rol_record_l3, t1_rol_record_yr, t1_rol_pa_pg_l3,
+         t1_rol_pa_pg_yr, t1_rol_points_pg_l3, t1_rol_points_pg_yr) %>% 
+  rename(t2_team = t1_team, 
+         t2_rol_record_l3 = t1_rol_record_l3, 
+         t2_rol_record_yr = t1_rol_record_yr, 
+         t2_rol_pa_pg_l3 = t1_rol_pa_pg_l3,
+         t2_rol_pa_pg_yr = t1_rol_pa_pg_yr, 
+         t2_rol_points_pg_l3 = t1_rol_points_pg_l3, 
+         t2_rol_points_pg_yr = t1_rol_points_pg_yr)
+
+# join those t2 metrics to the t1 df (because teams appear on both sides each week)
+all_df = left_join(t1_game_info_metrics, t2_game_info_metrics, by = c('t2_team', 'week', 'season'))
+
+  
+```
+
+
+Join PbP and GbG data
+```{r}
+# prep the pbp metrics for joining by t1
+t1_prepped_metrics = joined_metrics %>% 
+  rename(t1_team = team)
+colnames(t1_prepped_metrics)[4:length(colnames(t1_prepped_metrics))] = 
+  paste("t1_", colnames(t1_prepped_metrics)[4:length(colnames(t1_prepped_metrics))])
+
+# prep the pbp metrics for joining by t2
+t2_prepped_metrics = joined_metrics %>% 
+  rename(t2_team = team)
+colnames(t2_prepped_metrics)[4:length(colnames(t2_prepped_metrics))] = 
+  paste("t2_", colnames(t2_prepped_metrics)[4:length(colnames(t2_prepped_metrics))])
+
+
+
+# join t1 pbp metrics to all_df
+t1_joined = left_join(all_df, t1_prepped_metrics, by = c("t1_team", "season", "week"))
+
+# join t2 pbp metrics to t1_joined
+both_joined = left_join(t1_joined, t2_prepped_metrics, by = c("t2_team", "season", "week"))
+
+
+
+# now we have a complete dataset
+# needs some modification before it goes thru model, but most data wrangling is done
+head(both_joined)
+
+
+
+
+```
+
+
+Write Master df to csv
+```{r}
+# write to csv
+write.csv(both_joined, "cfb_project_data_prep_file_updated.csv")
+
+# write betting data to csv
+write.csv(betting_lines, "betting_lines_file_updated.csv")
+```
+
+
+
+
+
+
+

@@ -1,6 +1,6 @@
 ---
 title: "CFB Game Predictive Model"
-author: "The Five Horsemen"
+author: ""
 date: "2024-10-07"
 output: html_document
 ---
@@ -21,6 +21,7 @@ library(xgboost)
 library(Metrics)
 library(caret)
 library(httr2)
+library(readr)
 ```
 
 <br>
@@ -558,7 +559,8 @@ app_historical_df = pred_odds_comb %>%
                             ifelse(book_away_ml_odds > 0, 
                                   (1 + abs(book_away_ml_odds)/100)/2,
                             (1 + 100/abs(book_away_ml_odds))/2
-                            ))))
+                            )))) %>% 
+  mutate(pred_vs_book_spread = abs(pred_home_spread - book_home_spread))
   
   
 
@@ -587,6 +589,16 @@ app_historical_df = pred_odds_comb %>%
 
 
 
+```
+
+
+```{r}
+# write app_historical_df to a csv
+write.csv(app_historical_df, "app_historical_df.csv", row.names = FALSE, quote = FALSE, fileEncoding = "utf-8")
+
+
+
+colnames(app_historical_df)
 ```
 
 
