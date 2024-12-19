@@ -10,9 +10,9 @@ def historical_results_page():
     st.set_page_config(layout="wide")  # This will make the Streamlit app layout take up the entire width of the browser
     
     # Streamlit App Title
-    st.title('Model Performance on Historical Data')
+    st.title('Model Performance on Historical Test Data')
 
-    st.write("Here's how we've performed on historical data (not used in our model's training)")
+    st.write("This is how well our model would perform on previous games over the last few years versus how well a random 50/50 guesser would perform. Only test data (games not included in model training) are included here.")
 
     df = historical_data
 
@@ -22,9 +22,6 @@ def historical_results_page():
     # Format "season" as a string
     df['season'] = df['season'].astype(str)
 
-    # Remove "naive_ml_winnings" and "naive_spread_winnings" columns for display
-    columns_to_drop = ['naive_ml_winnings', 'naive_spread_winnings']
-    df = df.drop(columns=columns_to_drop, errors='ignore')
 
     # Get unique teams and sort them in ascending order (for both home_team and away_team)
     unique_teams = pd.unique(df[['home_team', 'away_team']].values.ravel('K'))
@@ -37,43 +34,46 @@ def historical_results_page():
     unique_seasons = sorted(df['season'].unique(), reverse=True)
 
     # Create columns for layout
-    col1, col2, col3 = st.columns([1, 3, 3])  # Left column for filters, middle column for text, right column for data frame
+    col1, col2, col3, col4 = st.columns([3, 1, 8, 5])  # Left column for filters, middle column for text, right column for data frame
 
     with col1:
+      
+        st.write("### Filters")
+        
         # Create dropdowns for filtering options on the left column
         team_options = st.selectbox(
-            "Select Team", 
+            "Team", 
             options=["All"] + unique_teams_sorted,  # Add "All" option and list unique teams only
             index=0  # Default to the "All" option
         )
 
         week_options = st.multiselect(
-            "Select Week", 
+            "Week", 
             options=["All"] + unique_weeks,  # Add "All" option and list unique weeks
             default=["All"]  # Default to the "All" option
         )
 
         season_options = st.multiselect(
-            "Select Season", 
+            "Season", 
             options=["All"] + unique_seasons,  # Add "All" option and list unique seasons
             default=["All"]  # Default to the "All" option
         )
 
         pred_home_win_options = st.selectbox(
-            "Select Predicted Home Win", 
+            "Predicted Home Team Win?", 
             options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
             index=0  # Defaults to the "All" option
         )
 
         actual_home_win_options = st.selectbox(
-            "Select Actual Home Win", 
+            "Home Team Actually Won?", 
             options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
             index=0  # Defaults to the "All" option
         )
 
         # Filter for book_home_spread (manual number input with bounds)
         book_home_spread_lower, book_home_spread_upper = st.slider(
-            "Select range for Book Home Spread",
+            "Book Home Spread",
             min_value=int(df['book_home_spread'].min()),
             max_value=int(df['book_home_spread'].max()),
             value=(int(df['book_home_spread'].min()), int(df['book_home_spread'].max()))
@@ -81,7 +81,7 @@ def historical_results_page():
 
         # Filter for book_home_ml_odds (manual number input with bounds)
         book_home_ml_odds_lower, book_home_ml_odds_upper = st.slider(
-            "Select range for Book Home ml Odds",
+            "Book Home ML Odds",
             min_value=int(df['book_home_ml_odds'].min()),
             max_value=int(df['book_home_ml_odds'].max()),
             value=(int(df['book_home_ml_odds'].min()), int(df['book_home_ml_odds'].max()))
@@ -89,17 +89,17 @@ def historical_results_page():
 
         # Filter for pred_home_cover (manual dropdown with 1 or 0)
         pred_home_cover_options = st.selectbox(
-            "Select Predicted Home Cover", 
+            "Predicted Home to Cover?", 
             options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
             index=0  # Defaults to the "All" option
         )
-
+        
     with col2:
-        # Middle column for text (empty for now)
-        st.write("### Middle Column (Text Placeholder)")
-        st.write("This is where you can add more content or text as needed.")
+        st.write("")
+        
 
-    with col3:
+
+    with col4:
         # Apply filters based on selections
         filtered_df = df
 
@@ -133,14 +133,177 @@ def historical_results_page():
             (filtered_df['book_home_ml_odds'] >= book_home_ml_odds_lower) & 
             (filtered_df['book_home_ml_odds'] <= book_home_ml_odds_upper)
         ]
+        
+        
+        # Remove "naive_ml_winnings" and "naive_spread_winnings" columns for display
+        # columns_to_drop = ['naive_ml_winnings', 'naive_spread_winnings']
+        # filtered_df = filtered_df.drop(columns=columns_to_drop, errors='ignore')
 
         if pred_home_cover_options != "All":
             pred_home_cover_value = 1 if pred_home_cover_options == "Yes" else 0
             filtered_df = filtered_df[filtered_df['pred_home_cover'] == pred_home_cover_value]
 
         # Show the filtered data in Streamlit
-        st.write("### Filtered Data")
+        st.write("### Test Data")
         st.dataframe(filtered_df)
+        
+        
+    with col3:
+            # Middle column for text (empty for now)
+            st.write("### Betting Results")
+            st.write("This is where you can add more content or text as needed.")
+            
+            
+            filtered_row_total = len(filtered_df)
+            
+            
+            ### SPREAD
+            
+            # Calculate blank1: average return on investment
+            our_return_spread = filtered_df['spread_winnings'].sum() / len(filtered_df)
+
+            # Optionally, format it as a percentage
+            our_return_percentage_spread = f"{(our_return_spread * 100) - 100:.2f}%"  # If you want to show it as a percentage
+            our_return_dollars_spread = f"{(100 * our_return_spread):.2f}"
+            
+            # Calculate blank1: average return on investment
+            naive_return_spread = filtered_df['naive_spread_winnings'].sum() / len(filtered_df)
+
+            # Optionally, format it as a percentage
+            naive_return_percentage_spread = f"{(naive_return_spread * 100) - 100:.2f}%"  # If you want to show it as a percentage
+            naive_return_dollars_spread = f"{(100 * naive_return_spread):.2f}"
+            ours_over_naive_spread = f"{100 * our_return_spread - 100 * naive_return_spread:.2f}"
+            naive_over_ours_spread = f"{100 * naive_return_spread - 100 * our_return_spread:.2f}"
+
+            
+            
+            if our_return_spread >= 1:
+                st.markdown(f"""
+                        <div style="font-size:30px; font-weight:bold; color:green; text-align:center;">
+                            Spread: {our_return_percentage_spread}
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                        <div style="font-size:30px; font-weight:bold; color:red; text-align:center;">
+                            Spread: {our_return_percentage_spread}
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+            st.write("")
+
+
+
+            # Create the sentence with the calculated value for blank1
+            if our_return_spread >= 1:
+                st.markdown(f"""
+                    Using our model to bet the spread in these games would give us a <span style="color:green"><b>{our_return_percentage_spread}</b></span> return on our investment.
+                    In other words, if we put \$100 on each game, we would finish with <span style="color:green"><b>\${our_return_dollars_spread}</b></span>.
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    Using our model to bet the spread in these games would give us a <span style="color:red"><b>{our_return_percentage_spread}</b></span> return on our investment.
+                    In other words, if we put \$100 on each game, we would finish with <span style="color:red"><b>\${our_return_dollars_spread}</b></span>.
+                """, unsafe_allow_html=True)
+            
+            
+            
+            if our_return_spread > naive_return_spread:
+                # Create the sentence with the calculated value for blank1
+                st.markdown(f"""
+                    The average bettor would earn a **{naive_return_percentage_spread}** return on our investment, assuming they win 50% of their bets.
+                    If they put \$100 on each game, we would finish with <span><b>\${naive_return_dollars_spread}</b></span>, which is <span style="color:green"><b>${ours_over_naive_spread}</b></span> less than we made.
+                """, unsafe_allow_html=True)
+            else:
+                # Create the sentence with the calculated value for blank1
+                st.markdown(f"""
+                    The average bettor would earn a **{naive_return_percentage_spread}** return on their investment, assuming they win 50% of their bets.
+                    If they put \$100 on each game, they would finish with <span><b>\${naive_return_dollars_spread}</b></span>, which is <span style="color:red"><b>${naive_over_ours_spread}</b></span> more than we made.
+                """, unsafe_allow_html=True)
+                
+                
+            st.write("")
+            st.write("")
+                
+                
+                
+            
+            ### MONEYLINE
+            
+            # Calculate blank1: average return on investment
+            our_return_moneyline = filtered_df['ml_winnings'].sum() / len(filtered_df)
+
+            # Optionally, format it as a percentage
+            our_return_percentage_moneyline = f"{(our_return_moneyline * 100) - 100:.2f}%"  # If you want to show it as a percentage
+            our_return_dollars_moneyline = f"{(100 * our_return_moneyline):.2f}"
+            
+            # Calculate blank1: average return on investment
+            naive_return_moneyline = filtered_df['naive_ml_winnings'].sum() / len(filtered_df)
+
+            # Optionally, format it as a percentage
+            naive_return_percentage_moneyline = f"{(naive_return_moneyline * 100) - 100:.2f}%"  # If you want to show it as a percentage
+            naive_return_dollars_moneyline = f"{(100 * naive_return_moneyline):.2f}"
+            ours_over_naive_moneyline = f"{100 * our_return_moneyline - 100 * naive_return_moneyline:.2f}"
+            naive_over_ours_moneyline = f"{100 * naive_return_moneyline - 100 * our_return_moneyline:.2f}"
+
+            
+            
+            if our_return_moneyline >= 1:
+                st.markdown(f"""
+                        <div style="font-size:30px; font-weight:bold; color:green; text-align:center;">
+                            Moneyline: {our_return_percentage_moneyline}
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                        <div style="font-size:30px; font-weight:bold; color:red; text-align:center;">
+                            Moneyline: {our_return_percentage_moneyline}
+                        </div>
+                    """, unsafe_allow_html=True)
+                
+            st.write("")
+
+
+
+            # Create the sentence with the calculated value for blank1
+            if our_return_moneyline >= 1:
+                st.markdown(f"""
+                    Using our model to bet the moneyline in these games would give us a <span style="color:green"><b>{our_return_percentage_moneyline}</b></span> return on our investment.
+                    In other words, if we put \$100 on each game, we would finish with <span style="color:green"><b>\${our_return_dollars_moneyline}</b></span>.
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    Using our model to bet the moneyline in these games would give us a <span style="color:red"><b>{our_return_percentage_moneyline}</b></span> return on our investment.
+                    In other words, if we put \$100 on each game, we would finish with <span style="color:red"><b>\${our_return_dollars_moneyline}</b></span>.
+                """, unsafe_allow_html=True)
+            
+            
+            
+            if our_return_moneyline > naive_return_moneyline:
+                # Create the sentence with the calculated value for blank1
+                st.markdown(f"""
+                    The average bettor would earn a **{naive_return_percentage_moneyline}** return on our investment, assuming they win 50% of their bets.
+                    If they put \$100 on each game, we would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:green"><b>${ours_over_naive_moneyline}</b></span> less than we made.
+                """, unsafe_allow_html=True)
+            else:
+                # Create the sentence with the calculated value for blank1
+                st.markdown(f"""
+                    The average bettor would earn a **{naive_return_percentage_moneyline}** return on their investment, assuming they win 50% of their bets.
+                    If they put \$100 on each game, they would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:red"><b>${naive_over_ours_moneyline}</b></span> more than we made.
+                """, unsafe_allow_html=True)
+                
+                
+            
+            # st.write(f"""
+            #       {filtered_ro})
+
+            
+        
+
+    
+    
+    
+    
 
 if __name__ == "__main__":
     historical_results_page()

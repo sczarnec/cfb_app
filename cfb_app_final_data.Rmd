@@ -588,6 +588,8 @@ app_historical_df = pred_odds_comb %>%
 # length(filter(app_historical_df, !is.na(ml_winnings))$spread_winnings)
 
 
+#length(na.omit(app_historical_df)$week)
+
 
 
 
