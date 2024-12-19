@@ -468,6 +468,9 @@ historical_odds = bind_rows(historical_odds_t1, historical_odds_t2)
 
 
 
+
+### GO BACK AND MATCH WEEKS, COULD BE CAUSING NULLS
+
 pred_odds_comb = left_join(all_predicted, historical_odds, by = c("team1", "team2", "week", "season"))
 
 
