@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import csv
+import math
 
 # Read the CSV file
 historical_data = pd.read_csv("app_historical_df.csv", encoding="utf-8", sep=",", header=0)
@@ -12,7 +14,7 @@ def historical_results_page():
     # Streamlit App Title
     st.title('Model Performance on Historical Test Data')
 
-    st.write("This is how well our model would perform on previous games over the last few years versus how well a random 50/50 guesser would perform. Only test data (games not included in model training) are included here.")
+    st.write("This is how well our model would perform on previous games over the last few years versus how well a random 50/50 guesser would perform. Only test data (games not included in model training) are included here. Missing values are in columns are skipped over for return calculations.")
 
     df = historical_data
 
@@ -70,28 +72,47 @@ def historical_results_page():
             options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
             index=0  # Defaults to the "All" option
         )
-
-        # Filter for book_home_spread (manual number input with bounds)
-        book_home_spread_lower, book_home_spread_upper = st.slider(
-            "Book Home Spread",
-            min_value=int(df['book_home_spread'].min()),
-            max_value=int(df['book_home_spread'].max()),
-            value=(int(df['book_home_spread'].min()), int(df['book_home_spread'].max()))
-        )
-
-        # Filter for book_home_ml_odds (manual number input with bounds)
-        book_home_ml_odds_lower, book_home_ml_odds_upper = st.slider(
-            "Book Home ML Odds",
-            min_value=int(df['book_home_ml_odds'].min()),
-            max_value=int(df['book_home_ml_odds'].max()),
-            value=(int(df['book_home_ml_odds'].min()), int(df['book_home_ml_odds'].max()))
-        )
-
+        
         # Filter for pred_home_cover (manual dropdown with 1 or 0)
         pred_home_cover_options = st.selectbox(
             "Predicted Home to Cover?", 
             options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
             index=0  # Defaults to the "All" option
+        )
+
+        # Filter for book_home_spread (manual number input with bounds)
+        book_home_spread_lower, book_home_spread_upper = st.slider(
+            "Book Home Spread",
+            min_value=int(math.floor(df['book_home_spread'].min())),
+            max_value=int(math.ceil(df['book_home_spread'].max())),
+            value=(int(math.floor(df['book_home_spread'].min())), int(math.ceil(df['book_home_spread'].max())))
+        )
+
+        # Filter to ask user whether they want to exclude NAs
+        exclude_na_spread = st.checkbox("Exclude NAs in the spread columns?", value=False)
+
+
+        # Filter for book_home_ml_odds (manual number input with bounds)
+        book_home_ml_odds_lower, book_home_ml_odds_upper = st.slider(
+            "Book Home ML Odds",
+            min_value=int(math.floor(df['book_home_ml_odds'].min())),
+            max_value=int(math.ceil(df['book_home_ml_odds'].max())),
+            value=(int(math.floor(df['book_home_ml_odds'].min())), int(math.ceil(df['book_home_ml_odds'].max())))
+        )
+
+        
+        
+        # Filter to ask user whether they want to exclude NAs
+        exclude_na_ml = st.checkbox("Exclude NAs in the ml columns?", value=False)
+        
+        
+        
+        # Filter for pred vs book (manual number input with bounds)
+        pred_vs_book_lower, pred_vs_book_upper = st.slider(
+            "Pred vs Book PD Diff",
+            min_value=int(math.floor(df['pred_vs_book_spread'].min())),
+            max_value=int(math.ceil(df['pred_vs_book_spread'].max())),
+            value=(int(math.floor(df['pred_vs_book_spread'].min())), int(math.ceil(df['pred_vs_book_spread'].max())))
         )
         
     with col2:
@@ -126,12 +147,20 @@ def historical_results_page():
 
         filtered_df = filtered_df[
             (filtered_df['book_home_spread'] >= book_home_spread_lower) & 
-            (filtered_df['book_home_spread'] <= book_home_spread_upper)
+            (filtered_df['book_home_spread'] <= book_home_spread_upper) |
+            (filtered_df['book_home_spread'].isna())
         ]
 
         filtered_df = filtered_df[
             (filtered_df['book_home_ml_odds'] >= book_home_ml_odds_lower) & 
-            (filtered_df['book_home_ml_odds'] <= book_home_ml_odds_upper)
+            (filtered_df['book_home_ml_odds'] <= book_home_ml_odds_upper) |
+            (filtered_df['book_home_spread'].isna())
+        ]
+        
+        filtered_df = filtered_df[
+            (filtered_df['pred_vs_book_spread'] >= pred_vs_book_lower) & 
+            (filtered_df['pred_vs_book_spread'] <= pred_vs_book_upper) |
+            (filtered_df['pred_vs_book_spread'].isna())
         ]
         
         
@@ -142,6 +171,14 @@ def historical_results_page():
         if pred_home_cover_options != "All":
             pred_home_cover_value = 1 if pred_home_cover_options == "Yes" else 0
             filtered_df = filtered_df[filtered_df['pred_home_cover'] == pred_home_cover_value]
+            
+            
+        # Exclude rows with NAs if the user selects the option
+        if exclude_na_ml:
+            filtered_df = filtered_df.dropna(subset=['ml_winnings'])
+            
+        if exclude_na_spread:
+            filtered_df = filtered_df.dropna(subset=['spread_winnings'])
 
         # Show the filtered data in Streamlit
         st.write("### Test Data")
@@ -151,23 +188,26 @@ def historical_results_page():
     with col3:
             # Middle column for text (empty for now)
             st.write("### Betting Results")
-            st.write("This is where you can add more content or text as needed.")
             
+            filtered_row_total = len(filtered_df['spread_winnings'])
             
-            filtered_row_total = len(filtered_df)
+            st.markdown(f"""
+                <i>italic</i>using a sample of {filtered_row_total} games<i>i</i>
+            """, unsafe_allow_html=True)
+            
             
             
             ### SPREAD
             
             # Calculate blank1: average return on investment
-            our_return_spread = filtered_df['spread_winnings'].sum() / len(filtered_df)
+            our_return_spread = filtered_df['spread_winnings'].sum(skipna=True) / filtered_df['spread_winnings'].count()
 
             # Optionally, format it as a percentage
             our_return_percentage_spread = f"{(our_return_spread * 100) - 100:.2f}%"  # If you want to show it as a percentage
             our_return_dollars_spread = f"{(100 * our_return_spread):.2f}"
             
             # Calculate blank1: average return on investment
-            naive_return_spread = filtered_df['naive_spread_winnings'].sum() / len(filtered_df)
+            naive_return_spread = filtered_df['naive_spread_winnings'].sum(skipna=True) / filtered_df['naive_spread_winnings'].count()
 
             # Optionally, format it as a percentage
             naive_return_percentage_spread = f"{(naive_return_spread * 100) - 100:.2f}%"  # If you want to show it as a percentage
@@ -231,14 +271,14 @@ def historical_results_page():
             ### MONEYLINE
             
             # Calculate blank1: average return on investment
-            our_return_moneyline = filtered_df['ml_winnings'].sum() / len(filtered_df)
+            our_return_moneyline = filtered_df['ml_winnings'].sum(skipna=True) / filtered_df['ml_winnings'].count()
 
             # Optionally, format it as a percentage
             our_return_percentage_moneyline = f"{(our_return_moneyline * 100) - 100:.2f}%"  # If you want to show it as a percentage
             our_return_dollars_moneyline = f"{(100 * our_return_moneyline):.2f}"
             
             # Calculate blank1: average return on investment
-            naive_return_moneyline = filtered_df['naive_ml_winnings'].sum() / len(filtered_df)
+            naive_return_moneyline = filtered_df['naive_ml_winnings'].sum(skipna=True) / filtered_df['naive_ml_winnings'].count()
 
             # Optionally, format it as a percentage
             naive_return_percentage_moneyline = f"{(naive_return_moneyline * 100) - 100:.2f}%"  # If you want to show it as a percentage
@@ -294,11 +334,6 @@ def historical_results_page():
                 
                 
             
-            # st.write(f"""
-            #       {filtered_ro})
-
-            
-        
 
     
     

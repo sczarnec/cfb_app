@@ -570,28 +570,31 @@ app_historical_df = pred_odds_comb %>%
 
 
 
-# sum(app_historical_df$ml_winnings, na.rm = TRUE)
-# length(filter(app_historical_df, !is.na(ml_winnings))$ml_winnings)
+sum(app_historical_df$ml_winnings, na.rm = TRUE)
+length(filter(app_historical_df, !is.na(ml_winnings))$ml_winnings)
 # 
 # 
-# sum(app_historical_df$spread_winnings, na.rm = TRUE)
-# length(filter(app_historical_df, !is.na(ml_winnings))$spread_winnings)
+sum(app_historical_df$spread_winnings, na.rm = TRUE)
+length(filter(app_historical_df, !is.na(spread_winnings))$spread_winnings)
 # 
 # 
 # 
 # 
-# sum(app_historical_df$naive_ml_winnings, na.rm = TRUE)
-# length(filter(app_historical_df, !is.na(ml_winnings))$ml_winnings)
-# 
-# 
-# sum(app_historical_df$naive_spread_winnings, na.rm = TRUE)
-# length(filter(app_historical_df, !is.na(ml_winnings))$spread_winnings)
+sum(app_historical_df$naive_ml_winnings, na.rm = TRUE)
+length(filter(app_historical_df, !is.na(naive_ml_winnings))$naive_ml_winnings)
+
+
+sum(app_historical_df$naive_spread_winnings, na.rm = TRUE)
+length(filter(app_historical_df, !is.na(naive_ml_winnings)|!is.na(naive_ml_winnings))$spread_winnings)
 
 
 #length(na.omit(app_historical_df)$week)
 
 
+View(filter(app_historical_df, (is.na(naive_ml_winnings)&(!is.na(ml_winnings))) | (is.na(ml_winnings)&(!is.na(naive_ml_winnings)))))
 
+
+View(filter(app_historical_df, is.na(ml_correct)))
 
 
 ```
