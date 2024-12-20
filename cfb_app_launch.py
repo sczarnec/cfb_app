@@ -6,20 +6,25 @@ import math
 import xgboost
 
 
-# Read the CSV files
+
+#### READ IN CSVs
+
+# Read in historical betting data
 historical_data = pd.read_csv("app_historical_df.csv", encoding="utf-8", sep=",", header=0)
 
 
-
-
+# load theoretical data
 theor_prepped = pd.read_csv("theoretical_prepped.csv", encoding="utf-8", sep=",", header=0)
 theor_prepped = theor_prepped.drop(theor_prepped.columns[0], axis=1)
 
+# load point diff model
 pdiff_model = xgboost.Booster()
 pdiff_model.load_model("cfb_pd_model.bin")
 
+# load sample col order for xgb
 sample_data = pd.read_csv("sample_data.csv", encoding="utf-8", sep=",", header=0)
 
+# load team info data
 team_info = pd.read_csv("team_info.csv", encoding="utf-8", sep=",", header=0)
 
 
@@ -28,11 +33,12 @@ team_info = pd.read_csv("team_info.csv", encoding="utf-8", sep=",", header=0)
 
 
 
-
+# st page width set
 st.set_page_config(layout="wide")
 
 
 
+# welcome page format
 def welcome_page():
   
   st.title('Czar College Football')
@@ -86,11 +92,9 @@ def welcome_page():
 
 
 
-
+# historical betting retults page format
 def historical_results_page():
-    # This will make the Streamlit app layout take up the entire width of the browser
     
-    # Streamlit App Title
     st.title('Model Performance on Historical Test Data')
 
     st.write("This is how well our model would perform on previous games over the last few years versus how well a random 50/50 guesser would perform. Only test data (games not included in model training) are included here. Missing values are in columns are skipped over for return calculations.")
@@ -115,7 +119,7 @@ def historical_results_page():
     unique_seasons = sorted(df['season'].unique(), reverse=True)
 
     # Create columns for layout
-    col1, col2, col3, col4 = st.columns([3, 1, 8, 5])  # Left column for filters, middle column for text, right column for data frame
+    col1, col2, col3, col4 = st.columns([3, 1, 8, 5])  
 
     with col1:
       
@@ -124,42 +128,43 @@ def historical_results_page():
         # Create dropdowns for filtering options on the left column
         team_options = st.selectbox(
             "Team", 
-            options=["All"] + unique_teams_sorted,  # Add "All" option and list unique teams only
-            index=0  # Default to the "All" option
+            options=["All"] + unique_teams_sorted,  
+            index=0  
         )
 
         week_options = st.multiselect(
             "Week", 
-            options=["All"] + unique_weeks,  # Add "All" option and list unique weeks
-            default=["All"]  # Default to the "All" option
+            options=["All"] + unique_weeks,  
+            default=["All"]  
         )
 
         season_options = st.multiselect(
             "Season", 
-            options=["All"] + unique_seasons,  # Add "All" option and list unique seasons
-            default=["All"]  # Default to the "All" option
+            options=["All"] + unique_seasons,  
+            default=["All"]  
         )
 
         pred_home_win_options = st.selectbox(
             "Predicted Home Team Win?", 
-            options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
-            index=0  # Defaults to the "All" option
+            options=["All", "Yes", "No"],  
+            index=0  
         )
 
         actual_home_win_options = st.selectbox(
             "Home Team Actually Won?", 
-            options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
-            index=0  # Defaults to the "All" option
+            options=["All", "Yes", "No"],  
+            index=0  
         )
         
         # Filter for pred_home_cover (manual dropdown with 1 or 0)
         pred_home_cover_options = st.selectbox(
             "Predicted Home to Cover?", 
-            options=["All", "Yes", "No"],  # Add "All", "Yes", "No" options
-            index=0  # Defaults to the "All" option
+            options=["All", "Yes", "No"],  
+            index=0  
         )
 
         # Filter for book_home_spread (manual number input with bounds)
+        # use int and floor/ceiling so the bounds don't round down and exclude outer bound games
         book_home_spread_lower, book_home_spread_upper = st.slider(
             "Book Home Spread",
             min_value=int(math.floor(df['book_home_spread'].min())),
@@ -187,18 +192,20 @@ def historical_results_page():
         
         
         # Filter for pred vs book (manual number input with bounds)
+        # use int and floor/ceiling so the bounds don't round down and exclude outer bound games
         pred_vs_book_lower, pred_vs_book_upper = st.slider(
             "Pred vs Book PD Diff",
             min_value=int(math.floor(df['pred_vs_book_spread'].min())),
             max_value=int(math.ceil(df['pred_vs_book_spread'].max())),
             value=(int(math.floor(df['pred_vs_book_spread'].min())), int(math.ceil(df['pred_vs_book_spread'].max())))
         )
-        
+    
+    # column for space
     with col2:
         st.write("")
         
 
-
+    # last column, filtered data frame
     with col4:
         # Apply filters based on selections
         filtered_df = df
@@ -223,7 +230,8 @@ def historical_results_page():
         if actual_home_win_options != "All":
             actual_home_win_value = 1 if actual_home_win_options == "Yes" else 0
             filtered_df = filtered_df[filtered_df['actual_home_win'] == actual_home_win_value]
-
+        
+        # these ones are gonna include NAs until the checkboxes filter out
         filtered_df = filtered_df[
             (filtered_df['book_home_spread'] >= book_home_spread_lower) & 
             (filtered_df['book_home_spread'] <= book_home_spread_upper) |
@@ -243,10 +251,7 @@ def historical_results_page():
         ]
         
         
-        # Remove "naive_ml_winnings" and "naive_spread_winnings" columns for display
-        # columns_to_drop = ['naive_ml_winnings', 'naive_spread_winnings']
-        # filtered_df = filtered_df.drop(columns=columns_to_drop, errors='ignore')
-
+        
         if pred_home_cover_options != "All":
             pred_home_cover_value = 1 if pred_home_cover_options == "Yes" else 0
             filtered_df = filtered_df[filtered_df['pred_home_cover'] == pred_home_cover_value]
@@ -263,34 +268,36 @@ def historical_results_page():
         st.write("### Test Data")
         st.dataframe(filtered_df)
         
-        
+    
+    
+    # column with results text
     with col3:
-            # Middle column for text (empty for now)
+            
             st.write("### Betting Results")
 
             
-            
-            
             ### SPREAD
             
-            # Calculate blank1: average return on investment
+            # Calculate our return on investment
             our_return_spread = filtered_df['spread_winnings'].sum(skipna=True) / filtered_df['spread_winnings'].count()
 
-            # Optionally, format it as a percentage
+            # format it as a percentage and dollars ($100 bet)
             our_return_percentage_spread = f"{(our_return_spread * 100) - 100:.2f}%"  # If you want to show it as a percentage
             our_return_dollars_spread = f"{(100 * our_return_spread):.2f}"
             
-            # Calculate blank1: average return on investment
+            # Calculate bettor average return on investment
             naive_return_spread = filtered_df['naive_spread_winnings'].sum(skipna=True) / filtered_df['naive_spread_winnings'].count()
 
-            # Optionally, format it as a percentage
+            # format it as a percentage and dollars ($100 bet)
             naive_return_percentage_spread = f"{(naive_return_spread * 100) - 100:.2f}%"  # If you want to show it as a percentage
             naive_return_dollars_spread = f"{(100 * naive_return_spread):.2f}"
+            
+            # diff between ours and avg return
             ours_over_naive_spread = f"{100 * our_return_spread - 100 * naive_return_spread:.2f}"
             naive_over_ours_spread = f"{100 * naive_return_spread - 100 * our_return_spread:.2f}"
 
             
-            
+            # format return print
             if our_return_spread >= 1:
                 st.markdown(f"""
                         <div style="font-size:30px; font-weight:bold; color:green; text-align:center;">
@@ -308,7 +315,7 @@ def historical_results_page():
 
 
 
-            # Create the sentence with the calculated value for blank1
+            # format return explanations
             if our_return_spread >= 1:
                 st.markdown(f"""
                     Using our model to bet the spread in these games would give us a <span style="color:green"><b>{our_return_percentage_spread}</b></span> return on our investment.
@@ -350,24 +357,26 @@ def historical_results_page():
             
             ### MONEYLINE
             
-            # Calculate blank1: average return on investment
+            # our return on investment
             our_return_moneyline = filtered_df['ml_winnings'].sum(skipna=True) / filtered_df['ml_winnings'].count()
 
-            # Optionally, format it as a percentage
+            # format it as a percentage and dollars ($100 bet)
             our_return_percentage_moneyline = f"{(our_return_moneyline * 100) - 100:.2f}%"  # If you want to show it as a percentage
             our_return_dollars_moneyline = f"{(100 * our_return_moneyline):.2f}"
             
-            # Calculate blank1: average return on investment
+            # average return on investment
             naive_return_moneyline = filtered_df['naive_ml_winnings'].sum(skipna=True) / filtered_df['naive_ml_winnings'].count()
 
-            # Optionally, format it as a percentage
+            # format it as a percentage and dollars ($100 bet)
             naive_return_percentage_moneyline = f"{(naive_return_moneyline * 100) - 100:.2f}%"  # If you want to show it as a percentage
             naive_return_dollars_moneyline = f"{(100 * naive_return_moneyline):.2f}"
+            
+            # diff between ours and average
             ours_over_naive_moneyline = f"{100 * our_return_moneyline - 100 * naive_return_moneyline:.2f}"
             naive_over_ours_moneyline = f"{100 * naive_return_moneyline - 100 * our_return_moneyline:.2f}"
 
             
-            
+            # format overall print          
             if our_return_moneyline >= 1:
                 st.markdown(f"""
                         <div style="font-size:30px; font-weight:bold; color:green; text-align:center;">
@@ -385,7 +394,7 @@ def historical_results_page():
 
 
 
-            # Create the sentence with the calculated value for blank1
+            # format description
             if our_return_moneyline >= 1:
                 st.markdown(f"""
                     Using our model to bet the moneyline in these games would give us a <span style="color:green"><b>{our_return_percentage_moneyline}</b></span> return on our investment.
@@ -421,7 +430,7 @@ def historical_results_page():
                 
                 
 
-
+# define game predictor page
 def game_predictor_page():
   
   
@@ -435,7 +444,7 @@ def game_predictor_page():
   col1, col2 = st.columns([1,2])
     
   
-  
+  # filters
   with col1:
       
       
@@ -448,19 +457,15 @@ def game_predictor_page():
       home_team = st.selectbox("Select Home Team", theor_prepped["t1_team"])
       
       
-      # Dropdown menu for Yes or No
+      # Dropdown menu for Yes or No for neutral site
       neutral_site_input = st.selectbox("Neutral Site?", ["No", "Yes"])
       
       # Encode Yes as 1 and No as 0
       neutral_site_ind = 1 if neutral_site_input == "Yes" else 0
       
-    
+  
+  # column two for predictions
   with col2:  
-    
-    
-      # away_team = "Indiana"
-      # home_team = "Notre Dame"
-      # neutral_site_ind = 0
     
       # Filter the DataFrame for the selected teams
       away_team_data = theor_prepped[theor_prepped["t1_team"] == away_team]
@@ -472,7 +477,7 @@ def game_predictor_page():
       )
       away_team_data = away_team_data.drop(columns=["neutral_site", "conference_game", "season", "week", "total_points"])
     
-      # Combine into one DataFrame
+      # Combine into one row
       combined_row = pd.concat([home_team_data.reset_index(drop=True), away_team_data.reset_index(drop=True)], axis=1)
       
       
@@ -483,6 +488,7 @@ def game_predictor_page():
       remaining_cols = [col for col in combined_row.columns if col not in sample_data.columns]
       
       # Reorder df1's columns according to df2, and append the remaining columns
+      # add back in neutral site and conference game data, make ture t1_home is 1
       combined_data = combined_row[common_cols + remaining_cols]
       combined_data = combined_data.drop(columns=["season", "week", "total_points", "t2_home", "t2_win"])
       combined_data.at[0, combined_data.columns[0]] = int(neutral_site_ind)
@@ -490,15 +496,16 @@ def game_predictor_page():
       combined_data.at[0, combined_data.columns[2]] = 1
       
     
-      
+      # predict new game
       theor_game_prediction_df = xgboost.DMatrix(combined_data.iloc[:, :109])
       theor_game_prediction = pdiff_model.predict(theor_game_prediction_df)
       
+      # results for home and away
       tgp_result_home = round(float(theor_game_prediction[0]),2)
       tgp_result_away = round(float(theor_game_prediction[0]),2) * -1
       
 
-          
+      # define winning/losing teams
       if tgp_result_home >= 0:
           winning_team = home_team
           losing_team = away_team
@@ -507,7 +514,7 @@ def game_predictor_page():
           losing_team = home_team
                         
                         
-      
+      # winning and losing team info
       win_filter = team_info[team_info['school'] == winning_team]
       winning_logo = win_filter.iloc[0]['logo']
       winning_color = win_filter.iloc[0]['color']
@@ -518,6 +525,7 @@ def game_predictor_page():
 
       
       
+      # formatting
       st.markdown(f"""
                             <div style="font-size:35px; font-weight:bold; text-align:center;">
                                 {away_team} vs {home_team}...
@@ -526,7 +534,7 @@ def game_predictor_page():
       st.write("  ")
       st.write("  ")
     
-      #st.image(winning_logo, width = 200)
+      
       st.markdown("<div style='display: flex; justify-content: center;'><img src='" + winning_logo + "' width='200'></div>", unsafe_allow_html=True)
       
       st.write("  ")

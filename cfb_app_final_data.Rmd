@@ -238,9 +238,11 @@ pred_dat_final = pred_dat_final %>%
 
 ### Load New Data
 ```{r}
+
+# updated dataset with new test data
 cfb_data_updated = read.csv("cfb_project_data_prep_file_updated.csv")[,-1]
 
-
+# current season and week
 current_season = max(cfb_data_updated$season)
 current_week = 15
   #max(cfb_data_updated[cfb_data_updated$season == current_season,]$week)
@@ -253,7 +255,7 @@ current_week = 15
 
 ```{r}
 
-# filter for next week's game
+# filter for completed games or next week's game
 new_weeks = cfb_data_updated %>% 
   filter(t1_division == 'fbs' & t2_division == 'fbs')%>% 
   select(-c(t1_division, t2_division)) %>% 
@@ -316,7 +318,7 @@ pd_matrix_nw = xgb.DMatrix(data = as.matrix(model_prepped_nw[,1:109]))
 
 ```
 
-### Use Model to Predict Week 7 Games
+### Use Model to Predict New Test Data Games
 
 ```{r}
 # Point Diff
@@ -355,6 +357,8 @@ all_predicted = bind_rows(pred_dat_final, pred_dat_final_nw)
 # *Betting Lines*
 
 ```{r}
+
+# betting line data
 historical_odds_orig = read.csv("overall_df.csv")
 
 ```
@@ -458,7 +462,7 @@ mapped_names <- c(
 name_change_list_t1 = data.frame(team_one = target_names, team1 = mapped_names) 
 name_change_list_t2 = data.frame(team_two = target_names, team2 = mapped_names) 
 
-
+# make betting line college names same as cfbfastr
 historical_odds = historical_odds_orig %>% 
   select(team_one, team_two, week, season, home_ml_odds_15, home_ml_money_15, home_ml_tickets_15, away_ml_odds_15, away_ml_money_15, away_ml_tickets_15, home_spread_odds_15, home_spread_value_15, home_spread_money_15, home_spread_tickets_15, away_spread_odds_15, away_spread_value_15, away_spread_money_15, away_spread_tickets_15)
 historical_odds = left_join(historical_odds, name_change_list_t1, by = "team_one")
@@ -473,6 +477,9 @@ historical_odds = bind_rows(historical_odds_t1, historical_odds_t2)
 
 ### GO BACK AND MATCH WEEKS, COULD BE CAUSING NULLS
 
+
+
+# join betting data with our predictions
 pred_odds_comb = left_join(all_predicted, historical_odds, by = c("team1", "team2", "week", "season"))
 
 
@@ -500,15 +507,20 @@ pred_odds_comb = left_join(all_predicted, historical_odds, by = c("team1", "team
 
 
 
-# is 3,000 obs enough? work cutting down by 1k for betting data? ask martin
+
 ```
 
 ```{r}
 
+# create data frame for app's betting analysis
 app_historical_df = pred_odds_comb %>% 
+  # just have t1 be home for simplicity
   filter(t1_home == 1) %>% 
+  # which betting lines are we using
   select(-c(away_ml_money_15, away_ml_tickets_15, home_ml_money_15, home_ml_tickets_15, away_spread_money_15, away_spread_tickets_15, home_spread_tickets_15, home_spread_money_15)) %>% 
+  # don't need anymore, know that t1 is home
   select(-t1_home) %>% 
+  # specific col names 
   mutate(book_home_ml_odds = home_ml_odds_15,
          book_away_ml_odds = away_ml_odds_15,
          book_home_spread = home_spread_value_15,
@@ -516,19 +528,25 @@ app_historical_df = pred_odds_comb %>%
          book_away_spread = away_spread_value_15,
          book_away_spread_odds = away_spread_odds_15
          ) %>% 
+  # get rid of old names
   select(-c(away_spread_value_15, home_ml_odds_15, away_ml_odds_15, home_spread_value_15, 
             home_spread_odds_15, away_spread_odds_15)) %>% 
+  # rename more stuff
   rename(pred_home_point_diff = pred_t1_point_diff,
          home_team = team1,
          away_team = team2,
          actual_home_point_diff = actual_t1_point_diff,
          pred_home_win = pred_t1_win,
          actual_home_win = actual_t1_win) %>% 
+  # change point diff to spread format
   mutate(pred_home_spread = pred_home_point_diff * -1,
          actual_home_spread = actual_home_point_diff * -1) %>%
+  # get rid of point diff cols
   select(-c(pred_home_point_diff, actual_home_point_diff)) %>% 
+  # cols for if predicted and actual results covered for home
   mutate(pred_home_cover = ifelse(pred_home_spread > book_home_spread, 1, 0),
          actual_home_cover = ifelse(actual_home_spread > book_home_spread, 1, 0)) %>% 
+  # if we got spread correct and our return
   mutate(spread_correct = ifelse(pred_home_cover == actual_home_cover, 1, 0),
          spread_winnings = ifelse(spread_correct == 1 & pred_home_cover == 1 & book_home_spread_odds > 0, 
                                   1 + abs(book_home_spread_odds)/100,
@@ -539,6 +557,7 @@ app_historical_df = pred_odds_comb %>%
                             ifelse(spread_correct == 1,
                                    1 + 100/abs(book_away_spread_odds),
                             0))))) %>% 
+  # if we got ml correct and our return 
   mutate(ml_correct = ifelse(pred_home_win == actual_home_win, 1, 0),
          ml_winnings = ifelse(ml_correct == 1 & pred_home_win == 1 & book_home_ml_odds > 0, 
                                   1 + abs(book_home_ml_odds)/100,
@@ -549,6 +568,7 @@ app_historical_df = pred_odds_comb %>%
                             ifelse(ml_correct == 1,
                                    1 + 100/abs(book_away_ml_odds),
                             0))))) %>% 
+  # average bettor's spread returns
   mutate(naive_spread_winnings = ifelse(actual_home_cover == 1 & book_home_spread_odds > 0, 
                                   (1 + abs(book_home_spread_odds)/100)/2,
                             ifelse(actual_home_cover == 1,
@@ -557,6 +577,7 @@ app_historical_df = pred_odds_comb %>%
                                   (1 + abs(book_away_spread_odds)/100)/2, 
                             (1 + 100/abs(book_away_spread_odds))/2
                             )))) %>%
+  # average bettor's ml returns
   mutate(home_favorite = ifelse(book_home_ml_odds < book_away_ml_odds, 1, 0)) %>% 
   mutate(naive_ml_winnings = ifelse(home_favorite == actual_home_win & actual_home_win == 1 & book_home_ml_odds >0, 
                                   (1 + abs(book_home_ml_odds)/100),
@@ -569,12 +590,13 @@ app_historical_df = pred_odds_comb %>%
                             ifelse(abs(home_favorite - actual_home_win) == 1, 
                                   0,
                                   NA)))))) %>% 
+  # how much we predicted the book was off
   mutate(pred_vs_book_spread = abs(pred_home_spread - book_home_spread)) %>% 
   select(-home_favorite)
   
 
 
-
+# check out overall winning to make sure they match with app
 
 # sum(app_historical_df$ml_winnings, na.rm = TRUE)
 # length(filter(app_historical_df, !is.na(ml_winnings))$ml_winnings)
@@ -619,6 +641,7 @@ app_historical_df = pred_odds_comb %>%
 # *Theoretical Games*
 
 ```{r}
+# read in theoretical games 
 theor_games_orig = read.csv("theoretical_games.csv")
 ```
 
@@ -626,7 +649,7 @@ theor_games_orig = read.csv("theoretical_games.csv")
 
 ```{r}
 
-# filter 
+# unselect excess cols
 theor_weeks = theor_games_orig %>% 
   select(-c(t1_division, X)) 
 
@@ -650,6 +673,7 @@ model_prepped_orig_tw = theor_weeks %>%
 response_holder_tw = model_prepped_orig_tw %>% 
   select(c(t1_point_diff, total_points, t1_win, season, week, t1_team))
 
+# getting rid of neutral site and conf game this time too, will calculate in python
 model_prepped_omit_tw = model_prepped_orig_tw %>% 
   select(-c(t1_point_diff, total_points, t1_win, season, week, t1_team, game_id, neutral_site, conference_game))
 
@@ -678,21 +702,27 @@ model_prepped$t1_team = response_holder$t1_team
 ```
 
 ```{r}
-write.csv(model_prepped_tw, "theoretical_prepped.csv")
+# write theoretical data out
+#write.csv(model_prepped_tw, "theoretical_prepped.csv")
 
-write.csv(model_prepped_nw[1,1:109], "sample_data.csv")
+# sample of how cols should be when wrangled in python
+#write.csv(model_prepped_nw[1,1:109], "sample_data.csv")
 ```
 
 
 # *Team Logos*
 
 ```{r}
+
+# load team info
 team_info = cfbd_team_info()
 
+# select cols
 team_info = team_info %>% 
   select(school, color, logo)
 
-write.csv(team_info, "team_info.csv")
+# write truncated result out
+#write.csv(team_info, "team_info.csv")
 ```
 
 

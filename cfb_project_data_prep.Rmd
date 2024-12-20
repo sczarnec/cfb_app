@@ -25,6 +25,7 @@ library(zoo)
 ## Load Data
 ```{r}
 
+# this season's year
 current_year = 2024
 
 
@@ -32,6 +33,7 @@ current_year = 2024
 cfb_data_orig = load_cfb_pbp(seasons = c(2023:current_year)) #original df
 
 
+# we already have our dataset for the training and old test data, these are new test data games
 cfb_data = cfb_data_orig %>% # df we can change
   filter(year >= 2024) %>% 
   filter(year > 2024 | week >= 6) %>% 
@@ -47,7 +49,7 @@ cfb_data = cfb_data_orig %>% # df we can change
                             'Louisiana Monroe' = 'UL Monroe'))
 
 
-# add row to calc prev stats for projected games in the future
+# add row to calc prev stats for future and theoretical games 
 # need to add to pbp or else won't create a col for that week
 added_week = 20
 #added_week = max(cfb_data[cfb_data$year == current_year,]$week) + 2
@@ -105,10 +107,7 @@ game_info = game_info_orig %>%
 
 
 
-# use base R to filter for "FBS" in home_division column of game_info
-# this is the only way to filter for "FBS" in this column
-
-
+# add row to game_info for future games and theoretical games
 team_conf = game_info %>% select(home_team, home_conference) %>% mutate(random = row_number()) %>%  group_by(home_team) %>% filter(random == max(random)) %>% ungroup %>% select(-random)
 fbs_home_teams = unique(game_info[game_info$home_division == "fbs",]$home_team)
 new_rows_game <- data.frame(
@@ -913,21 +912,25 @@ colnames(t2_prepped_metrics)[4:length(colnames(t2_prepped_metrics))] =
 t1_joined = left_join(all_df, t1_prepped_metrics, by = c("t1_team", "season", "week"))
 
 # join t2 pbp metrics to t1_joined
-both_joined = left_join(t1_joined, t2_prepped_metrics, by = c("t2_team", "season", "week"))
+both_joined_all = left_join(t1_joined, t2_prepped_metrics, by = c("t2_team", "season", "week"))
 
 
 
-# now we have a complete dataset
-# needs some modification before it goes thru model, but most data wrangling is done
-head(both_joined)
+
 
 
 
 
 ```
 
-Join Theoretical Pbp and GbG Data
+Separate Theoretical Data
 ```{r}
+
+# filter out theoretical games
+both_joined = both_joined_all %>%
+  filter(!is.na(game_id)) %>%
+
+# filter for theoretical games
 theoretical_games = both_joined %>% 
   filter(is.na(game_id) & is.na(t2_conference)) %>% 
   select(-starts_with("t2"))
@@ -941,7 +944,7 @@ Write Master df to csv
 #write.csv(both_joined, "cfb_project_data_prep_file_updated.csv")
 
 # write theoretical games to csv
-write.csv(theoretical_games, "theoretical_games.csv")
+#write.csv(theoretical_games, "theoretical_games.csv")
 ```
 
 
