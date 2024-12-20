@@ -29,7 +29,7 @@ make it easier to predict future games.
 
 ## The App
 
-Link: <https://czar-cfb.streamlit.app/>
+Link- <https://czar-cfb.streamlit.app/>
 
 The goal of the app was to 1) create a dynamic dashboard-like page to
 evaluate the model’s betting performance and 2) create an environment
