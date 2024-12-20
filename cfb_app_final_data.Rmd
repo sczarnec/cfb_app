@@ -22,6 +22,7 @@ library(Metrics)
 library(caret)
 library(httr2)
 library(readr)
+library(cfbfastR)
 ```
 
 <br>
@@ -650,14 +651,14 @@ response_holder_tw = model_prepped_orig_tw %>%
   select(c(t1_point_diff, total_points, t1_win, season, week, t1_team))
 
 model_prepped_omit_tw = model_prepped_orig_tw %>% 
-  select(-c(t1_point_diff, total_points, t1_win, season, week, t1_team, game_id))
+  select(-c(t1_point_diff, total_points, t1_win, season, week, t1_team, game_id, neutral_site, conference_game))
 
 
 
 
 model_prepped_tw = model_prepped_omit_tw %>% 
   dummy_cols('t1_conference') %>% 
-  select(-c(t1_conference, season_type, t1_points)) %>% 
+  select(-c(season_type, t1_points)) %>% 
   mutate(neutral_site = NA) %>% 
   mutate(conference_game = NA)
 
@@ -670,6 +671,7 @@ model_prepped_tw$t1_team = response_holder_tw$t1_team
 model_prepped_tw$t1_point_diff = response_holder_tw$t1_point_diff
 model_prepped_tw$total_points = response_holder_tw$total_points
 model_prepped_tw$t1_win = response_holder_tw$t1_win
+model_prepped$t1_team = response_holder$t1_team
 
 
 
@@ -677,9 +679,21 @@ model_prepped_tw$t1_win = response_holder_tw$t1_win
 
 ```{r}
 write.csv(model_prepped_tw, "theoretical_prepped.csv")
+
+write.csv(model_prepped_nw[1,1:109], "sample_data.csv")
 ```
 
 
+# *Team Logos*
+
+```{r}
+team_info = cfbd_team_info()
+
+team_info = team_info %>% 
+  select(school, color, logo)
+
+write.csv(team_info, "team_info.csv")
+```
 
 
 

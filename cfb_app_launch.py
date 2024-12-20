@@ -5,18 +5,22 @@ import csv
 import math
 import xgboost as xgb
 
+
 # Read the CSV files
 historical_data = pd.read_csv("app_historical_df.csv", encoding="utf-8", sep=",", header=0)
 
 
 
 
-
-
 theor_prepped = pd.read_csv("theoretical_prepped.csv", encoding="utf-8", sep=",", header=0)
+theor_prepped = theor_prepped.drop(theor_prepped.columns[0], axis=1)
 
 pdiff_model = xgb.Booster()
 pdiff_model.load_model("cfb_pd_model.bin")
+
+sample_data = pd.read_csv("sample_data.csv", encoding="utf-8", sep=",", header=0)
+
+team_info = pd.read_csv("team_info.csv", encoding="utf-8", sep=",", header=0)
 
 
 
@@ -418,9 +422,134 @@ def historical_results_page():
                 
 
 
-#def game_predictor_page():
+def game_predictor_page():
+  
+  
+  # Streamlit App
+  st.title("Game Predictor")
+  
+  st.write("Pick a combination of teams and see what the model predicts if they played today!")
 
+  
+  # Create columns for layout
+  col1, col2 = st.columns([1,2])
+    
+  
+  
+  with col1:
+      
+      
+      st.write("### Filters")
+      
+      # Step 1: Select Away Team
+      away_team = st.selectbox("Select Away Team", theor_prepped["t1_team"])
+      
+      # Step 2: Select Home Team
+      home_team = st.selectbox("Select Home Team", theor_prepped["t1_team"])
+      
+      
+      # Dropdown menu for Yes or No
+      neutral_site_input = st.selectbox("Neutral Site?", ["No", "Yes"])
+      
+      # Encode Yes as 1 and No as 0
+      neutral_site_ind = 1 if neutral_site_input == "Yes" else 0
+      
+    
+  with col2:  
+    
+    
+      # away_team = "Indiana"
+      # home_team = "Notre Dame"
+      # neutral_site_ind = 0
+    
+      # Filter the DataFrame for the selected teams
+      away_team_data = theor_prepped[theor_prepped["t1_team"] == away_team]
+      home_team_data = theor_prepped[theor_prepped["t1_team"] == home_team]
+    
+      # Rename columns for the away team to start with "t2_"
+      away_team_data = away_team_data.rename(
+          columns={col: col.replace("t1_", "t2_") for col in away_team_data.columns if col.startswith("t1_")}
+      )
+      away_team_data = away_team_data.drop(columns=["neutral_site", "conference_game", "season", "week", "total_points"])
+    
+      # Combine into one DataFrame
+      combined_row = pd.concat([home_team_data.reset_index(drop=True), away_team_data.reset_index(drop=True)], axis=1)
+      
+      
+      # Get the common columns and order according to df2
+      common_cols = [col for col in sample_data.columns if col in combined_row.columns]
+      
+      # Get columns in df1 that are not in df2
+      remaining_cols = [col for col in combined_row.columns if col not in sample_data.columns]
+      
+      # Reorder df1's columns according to df2, and append the remaining columns
+      combined_data = combined_row[common_cols + remaining_cols]
+      combined_data = combined_data.drop(columns=["season", "week", "total_points", "t2_home", "t2_win"])
+      combined_data.at[0, combined_data.columns[0]] = int(neutral_site_ind)
+      combined_data.at[0, combined_data.columns[1]] = int(combined_data.apply(lambda row: 1 if row['t1_conference'] == row['t2_conference'] else 0, axis=1))
+      combined_data.at[0, combined_data.columns[2]] = 1
+      
+    
+      
+      theor_game_prediction_df = xgb.DMatrix(combined_data.iloc[:, :109])
+      theor_game_prediction = pdiff_model.predict(theor_game_prediction_df)
+      
+      tgp_result_home = round(float(theor_game_prediction[0]),2)
+      tgp_result_away = round(float(theor_game_prediction[0]),2) * -1
+      
 
+          
+      if tgp_result_home >= 0:
+          winning_team = home_team
+          losing_team = away_team
+      else:
+          winning_team = away_team
+          losing_team = home_team
+                        
+                        
+      
+      win_filter = team_info[team_info['school'] == winning_team]
+      winning_logo = win_filter.iloc[0]['logo']
+      winning_color = win_filter.iloc[0]['color']
+      
+      lose_filter = team_info[team_info['school'] == losing_team]
+      losing_logo = lose_filter.iloc[0]['logo']
+      losing_color = lose_filter.iloc[0]['color']
+
+      
+      
+      st.markdown(f"""
+                            <div style="font-size:35px; font-weight:bold; text-align:center;">
+                                {away_team} vs {home_team}...
+                            </div>
+                        """, unsafe_allow_html=True)
+      st.write("  ")
+      st.write("  ")
+    
+      #st.image(winning_logo, width = 200)
+      st.markdown("<div style='display: flex; justify-content: center;'><img src='" + winning_logo + "' width='200'></div>", unsafe_allow_html=True)
+      
+      st.write("  ")
+      
+      
+      if tgp_result_home >= 0:
+                    st.markdown(f"""
+                            <div style="font-size:35px; font-weight:bold; color:{winning_color}; text-align:center;">
+                                {home_team} wins by {tgp_result_home}!
+                            </div>
+                        """, unsafe_allow_html=True)
+      else:
+                    st.markdown(f"""
+                            <div style="font-size:35px; font-weight:bold; color:{winning_color}; text-align:center;">
+                                {away_team} wins by {tgp_result_away}!
+                            </div>
+                        """, unsafe_allow_html=True)
+                
+       
+       
+          
+      
+  
 
         
 
@@ -438,6 +567,8 @@ if page == "Home":
     welcome_page()
 elif page == "Betting Accuracy":
     historical_results_page()
+elif page == "Game Predictor":
+    game_predictor_page()
 
     
   
