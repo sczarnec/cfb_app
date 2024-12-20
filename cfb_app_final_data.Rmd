@@ -195,6 +195,7 @@ bst_final <- xgboost(data = pd_train_matrix, # Set training data
               eval_metric = "rmse") # Set evaluation metric to use
 
 
+#xgb.save(bst_final, "cfb_pd_model.bin")
 
 ```
 
@@ -554,47 +555,51 @@ app_historical_df = pred_odds_comb %>%
                             ifelse(book_away_spread_odds > 0, 
                                   (1 + abs(book_away_spread_odds)/100)/2, 
                             (1 + 100/abs(book_away_spread_odds))/2
-                            )))) %>% 
-  mutate(naive_ml_winnings = ifelse(actual_home_win == 1 & book_home_ml_odds > 0, 
-                                  (1 + abs(book_home_ml_odds)/100)/2,
-                            ifelse(actual_home_win == 1,
-                                   (1 + 100/abs(book_home_ml_odds))/2,
-                            ifelse(book_away_ml_odds > 0, 
-                                  (1 + abs(book_away_ml_odds)/100)/2,
-                            (1 + 100/abs(book_away_ml_odds))/2
-                            )))) %>% 
-  mutate(pred_vs_book_spread = abs(pred_home_spread - book_home_spread))
+                            )))) %>%
+  mutate(home_favorite = ifelse(book_home_ml_odds < book_away_ml_odds, 1, 0)) %>% 
+  mutate(naive_ml_winnings = ifelse(home_favorite == actual_home_win & actual_home_win == 1 & book_home_ml_odds >0, 
+                                  (1 + abs(book_home_ml_odds)/100),
+                            ifelse(home_favorite == actual_home_win & actual_home_win == 1 & book_home_ml_odds <0,
+                                   (1 + 100/abs(book_home_ml_odds)),
+                            ifelse(home_favorite == actual_home_win & actual_home_win == 0 & book_away_ml_odds >0,
+                                   (1 + abs(book_away_ml_odds)/100),
+                            ifelse(home_favorite == actual_home_win & actual_home_win == 0 & book_away_ml_odds <0,
+                                   (1 + 100/abs(book_away_ml_odds)),
+                            ifelse(abs(home_favorite - actual_home_win) == 1, 
+                                  0,
+                                  NA)))))) %>% 
+  mutate(pred_vs_book_spread = abs(pred_home_spread - book_home_spread)) %>% 
+  select(-home_favorite)
   
-  
 
 
 
 
-sum(app_historical_df$ml_winnings, na.rm = TRUE)
-length(filter(app_historical_df, !is.na(ml_winnings))$ml_winnings)
+# sum(app_historical_df$ml_winnings, na.rm = TRUE)
+# length(filter(app_historical_df, !is.na(ml_winnings))$ml_winnings)
+# # # 
+# # # 
+# # sum(app_historical_df$spread_winnings, na.rm = TRUE)
+# # length(filter(app_historical_df, !is.na(spread_winnings))$spread_winnings)
+# # # 
+# # # 
+# # # 
+# # # 
+# sum(app_historical_df$naive_ml_winnings, na.rm = TRUE)
+# length(filter(app_historical_df, !is.na(naive_ml_winnings))$naive_ml_winnings)
 # 
 # 
-sum(app_historical_df$spread_winnings, na.rm = TRUE)
-length(filter(app_historical_df, !is.na(spread_winnings))$spread_winnings)
+# sum(app_historical_df$naive_spread_winnings, na.rm = TRUE)
+# length(filter(app_historical_df, !is.na(naive_spread_winnings))$spread_winnings)
 # 
 # 
+# #length(na.omit(app_historical_df)$week)
 # 
 # 
-sum(app_historical_df$naive_ml_winnings, na.rm = TRUE)
-length(filter(app_historical_df, !is.na(naive_ml_winnings))$naive_ml_winnings)
-
-
-sum(app_historical_df$naive_spread_winnings, na.rm = TRUE)
-length(filter(app_historical_df, !is.na(naive_ml_winnings)|!is.na(naive_ml_winnings))$spread_winnings)
-
-
-#length(na.omit(app_historical_df)$week)
-
-
-View(filter(app_historical_df, (is.na(naive_ml_winnings)&(!is.na(ml_winnings))) | (is.na(ml_winnings)&(!is.na(naive_ml_winnings)))))
-
-
-View(filter(app_historical_df, is.na(ml_correct)))
+# View(filter(app_historical_df, (is.na(naive_ml_winnings)&(!is.na(ml_winnings))) | (is.na(ml_winnings)&(!is.na(naive_ml_winnings)))))
+# 
+# 
+# View(filter(app_historical_df, is.na(ml_correct)))
 
 
 ```
@@ -602,12 +607,78 @@ View(filter(app_historical_df, is.na(ml_correct)))
 
 ```{r}
 # write app_historical_df to a csv
-write.csv(app_historical_df, "app_historical_df.csv", row.names = FALSE, quote = FALSE, fileEncoding = "utf-8")
+#write.csv(app_historical_df, "app_historical_df.csv", row.names = FALSE, quote = FALSE, fileEncoding = "utf-8")
 
 
 
-colnames(app_historical_df)
 ```
+
+<br>
+
+# *Theoretical Games*
+
+```{r}
+theor_games_orig = read.csv("theoretical_games.csv")
+```
+
+### Filter
+
+```{r}
+
+# filter 
+theor_weeks = theor_games_orig %>% 
+  select(-c(t1_division, X)) 
+
+```
+
+
+### Re-do Data Prep
+
+```{r}
+
+# redo data prep
+
+# treat NAs
+model_prepped_orig_tw = theor_weeks %>% 
+  select(-c(completed)) %>% # get rid of completed column
+  filter(!is.na(t1_rol_pa_pg_l3) & !is.na(t1_.rol_wpa_pp_def)) # get rid of games w/o previous game info data
+
+
+  
+
+response_holder_tw = model_prepped_orig_tw %>% 
+  select(c(t1_point_diff, total_points, t1_win, season, week, t1_team))
+
+model_prepped_omit_tw = model_prepped_orig_tw %>% 
+  select(-c(t1_point_diff, total_points, t1_win, season, week, t1_team, game_id))
+
+
+
+
+model_prepped_tw = model_prepped_omit_tw %>% 
+  dummy_cols('t1_conference') %>% 
+  select(-c(t1_conference, season_type, t1_points)) %>% 
+  mutate(neutral_site = NA) %>% 
+  mutate(conference_game = NA)
+
+
+
+
+model_prepped_tw$season = response_holder_tw$season
+model_prepped_tw$week = response_holder_tw$week
+model_prepped_tw$t1_team = response_holder_tw$t1_team
+model_prepped_tw$t1_point_diff = response_holder_tw$t1_point_diff
+model_prepped_tw$total_points = response_holder_tw$total_points
+model_prepped_tw$t1_win = response_holder_tw$t1_win
+
+
+
+```
+
+```{r}
+write.csv(model_prepped_tw, "theoretical_prepped.csv")
+```
+
 
 
 

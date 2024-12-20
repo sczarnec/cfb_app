@@ -3,13 +3,88 @@ import pandas as pd
 import numpy as np
 import csv
 import math
+import xgboost as xgb
 
-# Read the CSV file
+# Read the CSV files
 historical_data = pd.read_csv("app_historical_df.csv", encoding="utf-8", sep=",", header=0)
 
-def historical_results_page():
+
+
+
+
+
+theor_prepped = pd.read_csv("theoretical_prepped.csv", encoding="utf-8", sep=",", header=0)
+
+pdiff_model = xgb.Booster()
+pdiff_model.load_model("cfb_pd_model.bin")
+
+
+
+
+
+
+
+
+st.set_page_config(layout="wide")
+
+
+
+def welcome_page():
   
-    st.set_page_config(layout="wide")  # This will make the Streamlit app layout take up the entire width of the browser
+  st.title('Czar College Football')
+  
+  st.markdown(
+          """
+          <style>
+          .custom-font {
+              font-size: 24px;
+          }
+          </style>
+          <div class="custom-font">Welcome! This site is built around the use of an XGBoost model to predict
+          point differential for FBS College Football games. The goal is to predict future outcomes for fun
+          and try to beat the accuracy of sportsbook spread models.</div>
+          """,
+          unsafe_allow_html=True
+      )
+      
+  st.write("  ")
+  st.write("  ")
+      
+  st.markdown(
+          """
+          <style>
+          .custom-font {
+              font-size: 24px;
+          }
+          </style>
+          <div class="custom-font">Currently, we are using Version 1 of our model. We are in the process of
+          improving it by adding more predictors and re-tuning  for v2. It is not advised to use the model for
+          betting yet.</div>
+          """,
+          unsafe_allow_html=True
+      )
+      
+  st.write("  ")
+  st.write("  ")
+      
+  st.markdown(
+          """
+          <style>
+          .custom-font {
+              font-size: 24px;
+          }
+          </style>
+          <div class="custom-font">Check out the Navigation menu on the left to look at how our
+          model predicts games (real and theoretical) or how it has performed historically.</div>
+          """,
+          unsafe_allow_html=True
+      )
+
+
+
+
+def historical_results_page():
+    # This will make the Streamlit app layout take up the entire width of the browser
     
     # Streamlit App Title
     st.title('Model Performance on Historical Test Data')
@@ -188,12 +263,7 @@ def historical_results_page():
     with col3:
             # Middle column for text (empty for now)
             st.write("### Betting Results")
-            
-            filtered_row_total = len(filtered_df['spread_winnings'])
-            
-            st.markdown(f"""
-                <i>italic</i>using a sample of {filtered_row_total} games<i>i</i>
-            """, unsafe_allow_html=True)
+
             
             
             
@@ -238,12 +308,12 @@ def historical_results_page():
             if our_return_spread >= 1:
                 st.markdown(f"""
                     Using our model to bet the spread in these games would give us a <span style="color:green"><b>{our_return_percentage_spread}</b></span> return on our investment.
-                    In other words, if we put \$100 on each game, we would finish with <span style="color:green"><b>\${our_return_dollars_spread}</b></span>.
+                    In other words, if we evenly split \$100 between the games, we would finish with <span style="color:green"><b>\${our_return_dollars_spread}</b></span>.
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                     Using our model to bet the spread in these games would give us a <span style="color:red"><b>{our_return_percentage_spread}</b></span> return on our investment.
-                    In other words, if we put \$100 on each game, we would finish with <span style="color:red"><b>\${our_return_dollars_spread}</b></span>.
+                    In other words, if we evenly split \$100 between the games, we would finish with <span style="color:red"><b>\${our_return_dollars_spread}</b></span>.
                 """, unsafe_allow_html=True)
             
             
@@ -252,13 +322,19 @@ def historical_results_page():
                 # Create the sentence with the calculated value for blank1
                 st.markdown(f"""
                     The average bettor would earn a **{naive_return_percentage_spread}** return on our investment, assuming they win 50% of their bets.
-                    If they put \$100 on each game, we would finish with <span><b>\${naive_return_dollars_spread}</b></span>, which is <span style="color:green"><b>${ours_over_naive_spread}</b></span> less than we made.
+                    If they evenly split \$100 between the games, we would finish with <span><b>\${naive_return_dollars_spread}</b></span>, which is <span style="color:green"><b>${ours_over_naive_spread}</b></span> less than we made.
                 """, unsafe_allow_html=True)
             else:
                 # Create the sentence with the calculated value for blank1
                 st.markdown(f"""
                     The average bettor would earn a **{naive_return_percentage_spread}** return on their investment, assuming they win 50% of their bets.
-                    If they put \$100 on each game, they would finish with <span><b>\${naive_return_dollars_spread}</b></span>, which is <span style="color:red"><b>${naive_over_ours_spread}</b></span> more than we made.
+                    If they evenly split \$100 between the games, they would finish with <span><b>\${naive_return_dollars_spread}</b></span>, which is <span style="color:red"><b>${naive_over_ours_spread}</b></span> more than we made.
+                """, unsafe_allow_html=True)
+                
+            filtered_row_total_spread = filtered_df['spread_winnings'].count()
+            
+            st.markdown(f"""
+                <span><i>using a sample of {filtered_row_total_spread} games for spread calculations</span>
                 """, unsafe_allow_html=True)
                 
                 
@@ -309,12 +385,12 @@ def historical_results_page():
             if our_return_moneyline >= 1:
                 st.markdown(f"""
                     Using our model to bet the moneyline in these games would give us a <span style="color:green"><b>{our_return_percentage_moneyline}</b></span> return on our investment.
-                    In other words, if we put \$100 on each game, we would finish with <span style="color:green"><b>\${our_return_dollars_moneyline}</b></span>.
+                    In other words, if we evenly split \$100 between the games, we would finish with <span style="color:green"><b>\${our_return_dollars_moneyline}</b></span>.
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                     Using our model to bet the moneyline in these games would give us a <span style="color:red"><b>{our_return_percentage_moneyline}</b></span> return on our investment.
-                    In other words, if we put \$100 on each game, we would finish with <span style="color:red"><b>\${our_return_dollars_moneyline}</b></span>.
+                    In other words, if we evenly split \$100 between the games, we would finish with <span style="color:red"><b>\${our_return_dollars_moneyline}</b></span>.
                 """, unsafe_allow_html=True)
             
             
@@ -323,27 +399,48 @@ def historical_results_page():
                 # Create the sentence with the calculated value for blank1
                 st.markdown(f"""
                     The average bettor would earn a **{naive_return_percentage_moneyline}** return on our investment, assuming they win 50% of their bets.
-                    If they put \$100 on each game, we would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:green"><b>${ours_over_naive_moneyline}</b></span> less than we made.
+                    If they evenly split \$100 between the games, we would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:green"><b>${ours_over_naive_moneyline}</b></span> less than we made.
                 """, unsafe_allow_html=True)
             else:
                 # Create the sentence with the calculated value for blank1
                 st.markdown(f"""
                     The average bettor would earn a **{naive_return_percentage_moneyline}** return on their investment, assuming they win 50% of their bets.
-                    If they put \$100 on each game, they would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:red"><b>${naive_over_ours_moneyline}</b></span> more than we made.
+                    If they evenly split \$100 between the games, they would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:red"><b>${naive_over_ours_moneyline}</b></span> more than we made.
+                """, unsafe_allow_html=True)
+                
+            
+            filtered_row_total_moneyline = filtered_df['ml_winnings'].count()
+            
+            st.markdown(f"""
+                <span><i>using a sample of {filtered_row_total_moneyline} games for moneyline calculations</span>
                 """, unsafe_allow_html=True)
                 
                 
-            
+
+
+#def game_predictor_page():
+
+
+
+        
 
     
     
-    
-    
+# Sidebar navigation
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ("Home", "Betting Accuracy", "This Week", "The Playoff", "Game Predictor"))
 
-if __name__ == "__main__":
+
+
+
+# Display the selected page
+if page == "Home":
+    welcome_page()
+elif page == "Betting Accuracy":
     historical_results_page()
 
-
+    
+  
 
    
 

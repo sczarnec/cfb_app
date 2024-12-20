@@ -49,7 +49,8 @@ cfb_data = cfb_data_orig %>% # df we can change
 
 # add row to calc prev stats for projected games in the future
 # need to add to pbp or else won't create a col for that week
-added_week = max(cfb_data[cfb_data$year == current_year,]$week) + 1
+added_week = 20
+#added_week = max(cfb_data[cfb_data$year == current_year,]$week) + 2
 new_rows = cfb_data_orig %>% 
   filter(year == current_year) %>% 
   mutate(week = added_week) 
@@ -101,6 +102,39 @@ game_info_orig = load_data_func(cfbd_game_info, 2023, current_year) # original d
 game_info = game_info_orig %>% 
   filter(season >= 2024) %>% 
   filter(season > 2024 | week >= 6) # df we can change
+
+
+
+# use base R to filter for "FBS" in home_division column of game_info
+# this is the only way to filter for "FBS" in this column
+
+
+team_conf = game_info %>% select(home_team, home_conference) %>% mutate(random = row_number()) %>%  group_by(home_team) %>% filter(random == max(random)) %>% ungroup %>% select(-random)
+fbs_home_teams = unique(game_info[game_info$home_division == "fbs",]$home_team)
+new_rows_game <- data.frame(
+  matrix(
+    data = NA,  
+    nrow = length(unique(game_info[game_info$home_division == "fbs",]$home_team)),                          
+    ncol = 31                           
+  )
+)
+colnames(new_rows_game) = colnames(game_info)
+new_rows_game$home_team = fbs_home_teams
+new_rows_game$week = added_week
+new_rows_game$season = current_season
+new_rows_game = new_rows_game %>% select(-home_conference)
+new_rows_game = left_join(new_rows_game, team_conf, by = "home_team")
+new_rows_game = new_rows_game %>% mutate(away_team = paste0(home_team, "_opp"))
+
+
+game_info = bind_rows(game_info, new_rows_game)
+
+
+
+
+
+cfb_data = cfb_data %>% 
+  mutate(play_count = 1) # new col, easier to count plays later during aggregation
 
 
 
@@ -892,14 +926,22 @@ head(both_joined)
 
 ```
 
+Join Theoretical Pbp and GbG Data
+```{r}
+theoretical_games = both_joined %>% 
+  filter(is.na(game_id) & is.na(t2_conference)) %>% 
+  select(-starts_with("t2"))
+```
+
+
 
 Write Master df to csv
 ```{r}
 # write to csv
-write.csv(both_joined, "cfb_project_data_prep_file_updated.csv")
+#write.csv(both_joined, "cfb_project_data_prep_file_updated.csv")
 
-# write betting data to csv
-write.csv(betting_lines, "betting_lines_file_updated.csv")
+# write theoretical games to csv
+write.csv(theoretical_games, "theoretical_games.csv")
 ```
 
 
