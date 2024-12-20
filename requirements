@@ -1,3 +1,2 @@
 math
 xgboost==1.0.2
-numba==0.48.0
