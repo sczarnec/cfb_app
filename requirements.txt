@@ -1,2 +1,2 @@
 math
-xgboost==1.5.0
+xgboost
