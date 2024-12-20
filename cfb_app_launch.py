@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import csv
 import math
-import xgboost as xgb
+import xgboost
 
 
 # Read the CSV files
@@ -15,7 +15,7 @@ historical_data = pd.read_csv("app_historical_df.csv", encoding="utf-8", sep=","
 theor_prepped = pd.read_csv("theoretical_prepped.csv", encoding="utf-8", sep=",", header=0)
 theor_prepped = theor_prepped.drop(theor_prepped.columns[0], axis=1)
 
-pdiff_model = xgb.Booster()
+pdiff_model = xgboost.Booster()
 pdiff_model.load_model("cfb_pd_model.bin")
 
 sample_data = pd.read_csv("sample_data.csv", encoding="utf-8", sep=",", header=0)
@@ -491,7 +491,7 @@ def game_predictor_page():
       
     
       
-      theor_game_prediction_df = xgb.DMatrix(combined_data.iloc[:, :109])
+      theor_game_prediction_df = xgboost.DMatrix(combined_data.iloc[:, :109])
       theor_game_prediction = pdiff_model.predict(theor_game_prediction_df)
       
       tgp_result_home = round(float(theor_game_prediction[0]),2)
