@@ -402,13 +402,13 @@ def historical_results_page():
             if our_return_moneyline > naive_return_moneyline:
                 # Create the sentence with the calculated value for blank1
                 st.markdown(f"""
-                    The average bettor would earn a **{naive_return_percentage_moneyline}** return on our investment, assuming they win 50% of their bets.
+                    A conservative bettor would earn a **{naive_return_percentage_moneyline}** return on our investment, assuming they always bet the favorite.
                     If they evenly split \$100 between the games, we would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:green"><b>${ours_over_naive_moneyline}</b></span> less than we made.
                 """, unsafe_allow_html=True)
             else:
                 # Create the sentence with the calculated value for blank1
                 st.markdown(f"""
-                    The average bettor would earn a **{naive_return_percentage_moneyline}** return on their investment, assuming they win 50% of their bets.
+                    A conservative bettor would earn a **{naive_return_percentage_moneyline}** return on their investment, assuming they always bet the favorite.
                     If they evenly split \$100 between the games, they would finish with <span><b>\${naive_return_dollars_moneyline}</b></span>, which is <span style="color:red"><b>${naive_over_ours_moneyline}</b></span> more than we made.
                 """, unsafe_allow_html=True)
                 
