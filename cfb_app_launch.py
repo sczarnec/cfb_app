@@ -629,7 +629,7 @@ def playoff_page():
     
         
         st.markdown(f"""
-            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:orange;">
                 1st Round <br>
             </div>
         """, unsafe_allow_html=True)
@@ -856,7 +856,7 @@ def playoff_page():
     
     
         st.markdown(f"""
-            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:orange;">
                 Quarters <br>
             </div>
         """, unsafe_allow_html=True)
@@ -1084,7 +1084,7 @@ def playoff_page():
     
     
         st.markdown(f"""
-            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:orange;">
                 Semis <br>
             </div>
         """, unsafe_allow_html=True)
@@ -1201,7 +1201,7 @@ def playoff_page():
   with col9:
     
         st.markdown(f"""
-            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:orange;">
                 Natty <br>
             </div>
         """, unsafe_allow_html=True)
