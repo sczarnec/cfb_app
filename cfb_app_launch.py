@@ -29,6 +29,142 @@ team_info = pd.read_csv("team_info.csv", encoding="utf-8", sep=",", header=0)
 
 
 
+def game_predictor_func(home, away, neutral):
+  
+        # Filter the DataFrame for the selected teams
+      away_team_data = theor_prepped[theor_prepped["t1_team"] == away]
+      home_team_data = theor_prepped[theor_prepped["t1_team"] == home]
+    
+      # Rename columns for the away team to start with "t2_"
+      away_team_data = away_team_data.rename(
+          columns={col: col.replace("t1_", "t2_") for col in away_team_data.columns if col.startswith("t1_")}
+      )
+      away_team_data = away_team_data.drop(columns=["neutral_site", "conference_game", "season", "week", "total_points"])
+    
+      # Combine into one row
+      combined_row = pd.concat([home_team_data.reset_index(drop=True), away_team_data.reset_index(drop=True)], axis=1)
+      
+      
+      # Get the common columns and order according to df2
+      common_cols = [col for col in sample_data.columns if col in combined_row.columns]
+      
+      # Get columns in df1 that are not in df2
+      remaining_cols = [col for col in combined_row.columns if col not in sample_data.columns]
+      
+      # Reorder df1's columns according to df2, and append the remaining columns
+      # add back in neutral site and conference game data, make ture t1_home is 1
+      combined_data = combined_row[common_cols + remaining_cols]
+      combined_data = combined_data.drop(columns=["season", "week", "total_points", "t2_home", "t2_win"])
+      combined_data.at[0, combined_data.columns[0]] = int(neutral)
+      combined_data.at[0, combined_data.columns[1]] = int(combined_data.apply(lambda row: 1 if row['t1_conference'] == row['t2_conference'] else 0, axis=1))
+      combined_data.at[0, combined_data.columns[2]] = 1
+      
+    
+      # predict new game
+      theor_game_prediction_df = xgboost.DMatrix(combined_data.iloc[:, :109])
+      theor_game_prediction = pdiff_model.predict(theor_game_prediction_df)
+      
+      # results for home and away
+      tgp_result_home = round(float(theor_game_prediction[0]),2)
+      tgp_result_away = round(float(theor_game_prediction[0]),2) * -1
+      
+      
+      
+      
+        # Filter the DataFrame for the selected teams
+      away_team_data_opp = theor_prepped[theor_prepped["t1_team"] == home]
+      home_team_data_opp = theor_prepped[theor_prepped["t1_team"] == away]
+    
+      # Rename columns for the away team to start with "t2_"
+      away_team_data_opp = away_team_data_opp.rename(
+          columns={col: col.replace("t1_", "t2_") for col in away_team_data_opp.columns if col.startswith("t1_")}
+      )
+      away_team_data_opp = away_team_data_opp.drop(columns=["neutral_site", "conference_game", "season", "week", "total_points"])
+    
+      # Combine into one row
+      combined_row_opp = pd.concat([home_team_data_opp.reset_index(drop=True), away_team_data_opp.reset_index(drop=True)], axis=1)
+      
+      
+      # Get the common columns and order according to df2
+      common_cols_opp = [col for col in sample_data.columns if col in combined_row_opp.columns]
+      
+      # Get columns in df1 that are not in df2
+      remaining_cols_opp = [col for col in combined_row_opp.columns if col not in sample_data.columns]
+      
+      # Reorder df1's columns according to df2, and append the remaining columns
+      # add back in neutral site and conference game data, make ture t1_home is 1
+      combined_data_opp = combined_row_opp[common_cols_opp + remaining_cols_opp]
+      combined_data_opp = combined_data_opp.drop(columns=["season", "week", "total_points", "t2_home", "t2_win"])
+      combined_data_opp.at[0, combined_data_opp.columns[0]] = int(neutral)
+      combined_data_opp.at[0, combined_data_opp.columns[1]] = int(combined_data_opp.apply(lambda row: 1 if row['t1_conference'] == row['t2_conference'] else 0, axis=1))
+      combined_data_opp.at[0, combined_data_opp.columns[2]] = 1
+      
+    
+      # predict new game
+      theor_game_prediction_df_opp = xgboost.DMatrix(combined_data_opp.iloc[:, :109])
+      theor_game_prediction_opp = pdiff_model.predict(theor_game_prediction_df_opp)
+      
+      # results for home and away
+      tgp_result_home_opp = round(float(theor_game_prediction_opp[0]),2)
+      tgp_result_away_opp = round(float(theor_game_prediction_opp[0]),2) * -1
+      
+      # home = "Notre Dame"
+      # away = "Indiana"
+      # neutral = 1
+      
+      if neutral == 0:
+            # define winning/losing teams
+            if tgp_result_home >= 0:
+                winning_team = home
+                losing_team = away
+                tgp_result_wt = tgp_result_home
+            else:
+                winning_team = away
+                losing_team = home
+                tgp_result_wt = tgp_result_away
+                              
+                              
+            # winning and losing team info
+            win_filter = team_info[team_info['school'] == winning_team]
+            winning_logo = win_filter.iloc[0]['logo']
+            winning_color = win_filter.iloc[0]['color']
+            
+            lose_filter = team_info[team_info['school'] == losing_team]
+            losing_logo = lose_filter.iloc[0]['logo']
+            losing_color = lose_filter.iloc[0]['color'] 
+      else:
+        
+            tgp_result_home = round((tgp_result_home + tgp_result_away_opp) / 2, 2)
+            tgp_result_away = round(tgp_result_home * -1, 2)
+            
+            
+            # define winning/losing teams
+            if tgp_result_home >= 0:
+                winning_team = home
+                losing_team = away
+                tgp_result_wt = tgp_result_home
+            else:
+                winning_team = away
+                losing_team = home
+                tgp_result_wt = tgp_result_away
+                              
+                              
+            # winning and losing team info
+            win_filter = team_info[team_info['school'] == winning_team]
+            winning_logo = win_filter.iloc[0]['logo']
+            winning_color = win_filter.iloc[0]['color']
+            
+            lose_filter = team_info[team_info['school'] == losing_team]
+            losing_logo = lose_filter.iloc[0]['logo']
+            losing_color = lose_filter.iloc[0]['color'] 
+
+
+      return {"tgp_result_home": tgp_result_home, "tgp_result_away": tgp_result_away,
+              "winning_team": winning_team, "losing_team": losing_team, "winning_logo": winning_logo,
+              "losing_logo": losing_logo, "winning_color": winning_color, "losing_color": losing_color,
+              "tgp_result_wt": tgp_result_wt}  
+        
+
 
 
 
@@ -429,6 +565,680 @@ def historical_results_page():
                 """, unsafe_allow_html=True)
                 
                 
+                
+                
+def playoff_page():
+  
+  # Streamlit App
+  st.title("The Playoff")
+  
+  st.write("Customize your playoff! Select what teams you want in each seed. The model will predict each game, but you can override with the checkbox.")
+
+  st.write("Some notes: first, the underlying data used for these predictions ends at the Conference Championship week. So, it does not currently take recent playoff performance into account.")
+
+  st.write("Another, neutral site games are not yet accounted for by the model. Here, the point differential is calculated by the average of each team playing the other at home.")
+
+  st.write("Also, I know the model loves ND this postseason. I swear it's XGBoost predicting, not me :)")
+  
+  st.write("  ")
+
+
+  neutral_site_ind_fr = 0
+  neutral_site_ind_rest = 1
+  
+  # Create columns for layout
+  col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([4,2,4,1,4,1,4,1,4])
+  
+  
+  
+  with col1:
+    
+      # Create select boxes with specific default values
+      default_values = ["Oregon", "Georgia", "Boise State", "Arizona State", "Texas", "Penn State", 
+                      "Notre Dame", "Ohio State", "Tennessee", "Indiana", "SMU", "Clemson"]
+
+      seeds = []
+      for value in default_values:
+          
+        try:
+            # Find the index of the default value
+            index = theor_prepped["t1_team"].tolist().index(value)
+        except ValueError:
+            # If the value is not found, use a fallback index (e.g., -1 or 0)
+            index = -1  # You can change this to 0 if you want a valid index
+        seeds.append(index)
+    
+      
+      # select boxes
+      seed1 = st.selectbox("1 Seed", theor_prepped["t1_team"], index = seeds[0])
+      seed2 = st.selectbox("2 Seed", theor_prepped["t1_team"], index = seeds[1])
+      seed3 = st.selectbox("3 Seed", theor_prepped["t1_team"], index = seeds[2])
+      seed4 = st.selectbox("4 Seed", theor_prepped["t1_team"], index = seeds[3])
+      seed5 = st.selectbox("5 Seed", theor_prepped["t1_team"], index = seeds[4])
+      seed6 = st.selectbox("6 Seed", theor_prepped["t1_team"], index = seeds[5])
+      seed7 = st.selectbox("7 Seed", theor_prepped["t1_team"], index = seeds[6])
+      seed8 = st.selectbox("8 Seed", theor_prepped["t1_team"], index = seeds[7])
+      seed9 = st.selectbox("9 Seed", theor_prepped["t1_team"], index = seeds[8])
+      seed10 = st.selectbox("10 Seed", theor_prepped["t1_team"], index = seeds[9])
+      seed11 = st.selectbox("11 Seed", theor_prepped["t1_team"], index = seeds[10])
+      seed12 = st.selectbox("12 Seed", theor_prepped["t1_team"], index = seeds[11])
+      
+      
+      
+  with col3:
+        
+        
+        # FR1
+        if "override_fr1" not in st.session_state:
+            st.session_state.override_fr1 = False
+    
+        results_fr1 = game_predictor_func(seed8, seed9, neutral_site_ind_fr)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                FR Game 1 <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed8} <br> vs <br> {seed9}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_fr1 == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr1["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr1["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr1_winner = results_fr1["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr1["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr1["winning_color"]}; text-align:center;">
+                    by {results_fr1["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr1_winner = results_fr1["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_fr1, key = "override_fr1")
+        
+        
+        st.write(" ")
+        
+       
+       
+        
+        # FR2
+        if "override_fr2" not in st.session_state:
+            st.session_state.override_fr2 = False
+    
+        results_fr2 = game_predictor_func(seed7, seed10, neutral_site_ind_fr)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                FR Game 2 <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed7} <br> vs <br> {seed10}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_fr2 == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr2["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr2["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr2_winner = results_fr2["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr2["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr2["winning_color"]}; text-align:center;">
+                    by {results_fr2["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr2_winner = results_fr2["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_fr2, key = "override_fr2")
+        
+        
+        st.write(" ")
+        
+        
+        
+
+
+        # FR3
+        if "override_fr3" not in st.session_state:
+            st.session_state.override_fr3 = False
+    
+        results_fr3 = game_predictor_func(seed6, seed11, neutral_site_ind_fr)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                FR Game 3 <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed6} <br> vs <br> {seed11}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_fr3 == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr3["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr3["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr3_winner = results_fr3["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr3["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr3["winning_color"]}; text-align:center;">
+                    by {results_fr3["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr3_winner = results_fr3["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_fr3, key = "override_fr3")
+        
+        
+        st.write(" ")
+        
+        
+        
+        
+        
+        # FR4
+        if "override_fr4" not in st.session_state:
+            st.session_state.override_fr4 = False
+    
+        results_fr4 = game_predictor_func(seed5, seed12, neutral_site_ind_fr)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                FR Game 4 <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed5} <br> vs <br> {seed12}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_fr4 == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr4["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr4["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr4_winner = results_fr4["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fr4["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fr4["winning_color"]}; text-align:center;">
+                    by {results_fr4["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fr4_winner = results_fr4["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_fr4, key = "override_fr4")
+        
+        
+        
+        
+        
+        
+  with col5:
+
+
+        # Rose Bowl
+        if "override_rb" not in st.session_state:
+            st.session_state.override_rb = False
+    
+        results_rb = game_predictor_func(seed1, fr1_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Rose Bowl <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed1} <br> vs <br> {fr1_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_rb == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_rb["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_rb["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            rb_winner = results_rb["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_rb["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_rb["winning_color"]}; text-align:center;">
+                    by {results_rb["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            rb_winner = results_rb["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_rb, key = "override_rb")
+        
+        
+        st.write(" ")
+        
+       
+       
+        
+        # Sugar Bowl
+        if "override_sb" not in st.session_state:
+            st.session_state.override_sb = False
+    
+        results_sb = game_predictor_func(seed2, fr2_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Sugar Bowl <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed2} <br> vs <br> {fr2_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_sb == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_sb["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_sb["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            sb_winner = results_sb["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_sb["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_sb["winning_color"]}; text-align:center;">
+                    by {results_sb["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            sb_winner = results_sb["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_sb, key = "override_sb")
+        
+        
+        st.write(" ")
+        
+        
+        
+
+
+        # Fiesta Bowl
+        if "override_fb" not in st.session_state:
+            st.session_state.override_fb = False
+    
+        results_fb = game_predictor_func(seed3, fr3_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Fiesta Bowl <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed3} <br> vs <br> {fr3_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_fb == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fb["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fb["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fb_winner = results_fb["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_fb["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_fb["winning_color"]}; text-align:center;">
+                    by {results_fb["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fb_winner = results_fb["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_fb, key = "override_fb")
+        
+        
+        st.write(" ")
+        
+        
+        
+        
+        
+        # Peach Bowl
+        if "override_pb" not in st.session_state:
+            st.session_state.override_pb = False
+    
+        results_pb = game_predictor_func(seed4, fr4_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Peach Bowl <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {seed4} <br> vs <br> {fr4_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_pb == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_pb["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_pb["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            pb_winner = results_pb["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_pb["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_pb["winning_color"]}; text-align:center;">
+                    by {results_pb["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            pb_winner = results_pb["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_pb, key = "override_pb")
+        
+        
+        
+        
+  
+
+
+  with col7:
+
+
+        # Cotton Bowl
+        if "override_cb" not in st.session_state:
+            st.session_state.override_cb = False
+    
+        results_cb = game_predictor_func(rb_winner, pb_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Cotton Bowl <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {rb_winner} <br> vs <br> {pb_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_cb == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_cb["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_cb["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            cb_winner = results_cb["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_cb["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_cb["winning_color"]}; text-align:center;">
+                    by {results_cb["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            cb_winner = results_cb["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_cb, key = "override_cb")
+        
+        
+        st.write(" ")
+        
+       
+       
+        
+        # Orange Bowl
+        if "override_ob" not in st.session_state:
+            st.session_state.override_ob = False
+    
+        results_ob = game_predictor_func(sb_winner, fb_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Orange Bowl <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {sb_winner} <br> vs <br> {fb_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_ob == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_ob["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_ob["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            ob_winner = results_ob["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_ob["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_ob["winning_color"]}; text-align:center;">
+                    by {results_ob["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            ob_winner = results_ob["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_ob, key = "override_ob")
+        
+        
+        
+        
+        
+
+
+  with col9:
+
+
+        # National Championship
+        if "override_nc" not in st.session_state:
+            st.session_state.override_nc = False
+    
+        results_nc = game_predictor_func(cb_winner, ob_winner, neutral_site_ind_rest)
+    
+        # Display the header for the game
+        st.markdown(f"""
+            <div style="font-size:20px; font-weight:bold; text-align:center; line-height:2; color:#87CEEB;">
+                Championship <br>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+                <div style="font-size:25px; font-weight:bold; text-align:center; line-height:1;">
+                    {cb_winner} <br> vs <br> {ob_winner}
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Conditional Display of Matchup based on session_state
+        if st.session_state.override_nc == True:
+            
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_nc["losing_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_nc["winning_color"]}; text-align:center;">
+                      
+                </div>
+            """, unsafe_allow_html=True)
+            
+            nc_winner = results_nc["losing_team"]
+            
+        else:
+            st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results_nc["winning_logo"] + "' width='60'></div>", unsafe_allow_html=True)
+            
+            # If override is checked, use a different color or text for the result
+            st.markdown(f"""
+                <div style="font-size:15px; font-weight:bold; color:{results_nc["winning_color"]}; text-align:center;">
+                    by {results_nc["tgp_result_wt"]}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            nc_winner = results_nc["winning_team"]
+        
+            
+        # Place the checkbox at the bottom of the page (after everything else)
+        st.checkbox("Override Win?", value=st.session_state.override_nc, key = "override_nc")
+        
+        
+              
+
+        
+        
+
+  
+  
+  
+                
+                
 
 # define game predictor page
 def game_predictor_page():
@@ -439,6 +1249,7 @@ def game_predictor_page():
   
   st.write("Pick a combination of teams and see what the model predicts if they played today!")
 
+  st.write("As a note, neutral site games are not yet accounted for by the model. Here, the point differential is calculated by the average of each team playing the other at home.")
   
   # Create columns for layout
   col1, col2 = st.columns([1,2])
@@ -451,10 +1262,10 @@ def game_predictor_page():
       st.write("### Filters")
       
       # Step 1: Select Away Team
-      away_team = st.selectbox("Select Away Team", theor_prepped["t1_team"])
+      away_team = st.selectbox("Select Away Team", theor_prepped["t1_team"], index = 40)
       
       # Step 2: Select Home Team
-      home_team = st.selectbox("Select Home Team", theor_prepped["t1_team"])
+      home_team = st.selectbox("Select Home Team", theor_prepped["t1_team"], index = 77)
       
       
       # Dropdown menu for Yes or No for neutral site
@@ -463,65 +1274,22 @@ def game_predictor_page():
       # Encode Yes as 1 and No as 0
       neutral_site_ind = 1 if neutral_site_input == "Yes" else 0
       
+      st.write("  ")
+      st.write(" ")
+      
+      st.markdown(f"""
+          <div style="font-size:18px; font-weight:bold; text-align:center;">
+              Data last updated after... <br> <span style="color: orange;"> Conf Champ Week</span>
+          </div>
+      """, unsafe_allow_html=True)
+
+      
   
   # column two for predictions
   with col2:  
-    
-      # Filter the DataFrame for the selected teams
-      away_team_data = theor_prepped[theor_prepped["t1_team"] == away_team]
-      home_team_data = theor_prepped[theor_prepped["t1_team"] == home_team]
-    
-      # Rename columns for the away team to start with "t2_"
-      away_team_data = away_team_data.rename(
-          columns={col: col.replace("t1_", "t2_") for col in away_team_data.columns if col.startswith("t1_")}
-      )
-      away_team_data = away_team_data.drop(columns=["neutral_site", "conference_game", "season", "week", "total_points"])
-    
-      # Combine into one row
-      combined_row = pd.concat([home_team_data.reset_index(drop=True), away_team_data.reset_index(drop=True)], axis=1)
       
       
-      # Get the common columns and order according to df2
-      common_cols = [col for col in sample_data.columns if col in combined_row.columns]
-      
-      # Get columns in df1 that are not in df2
-      remaining_cols = [col for col in combined_row.columns if col not in sample_data.columns]
-      
-      # Reorder df1's columns according to df2, and append the remaining columns
-      # add back in neutral site and conference game data, make ture t1_home is 1
-      combined_data = combined_row[common_cols + remaining_cols]
-      combined_data = combined_data.drop(columns=["season", "week", "total_points", "t2_home", "t2_win"])
-      combined_data.at[0, combined_data.columns[0]] = int(neutral_site_ind)
-      combined_data.at[0, combined_data.columns[1]] = int(combined_data.apply(lambda row: 1 if row['t1_conference'] == row['t2_conference'] else 0, axis=1))
-      combined_data.at[0, combined_data.columns[2]] = 1
-      
-    
-      # predict new game
-      theor_game_prediction_df = xgboost.DMatrix(combined_data.iloc[:, :109])
-      theor_game_prediction = pdiff_model.predict(theor_game_prediction_df)
-      
-      # results for home and away
-      tgp_result_home = round(float(theor_game_prediction[0]),2)
-      tgp_result_away = round(float(theor_game_prediction[0]),2) * -1
-      
-
-      # define winning/losing teams
-      if tgp_result_home >= 0:
-          winning_team = home_team
-          losing_team = away_team
-      else:
-          winning_team = away_team
-          losing_team = home_team
-                        
-                        
-      # winning and losing team info
-      win_filter = team_info[team_info['school'] == winning_team]
-      winning_logo = win_filter.iloc[0]['logo']
-      winning_color = win_filter.iloc[0]['color']
-      
-      lose_filter = team_info[team_info['school'] == losing_team]
-      losing_logo = lose_filter.iloc[0]['logo']
-      losing_color = lose_filter.iloc[0]['color']
+      results = game_predictor_func(home_team, away_team, neutral_site_ind)
 
       
       
@@ -535,21 +1303,21 @@ def game_predictor_page():
       st.write("  ")
     
       
-      st.markdown("<div style='display: flex; justify-content: center;'><img src='" + winning_logo + "' width='200'></div>", unsafe_allow_html=True)
+      st.markdown("<div style='display: flex; justify-content: center;'><img src='" + results["winning_logo"] + "' width='200'></div>", unsafe_allow_html=True)
       
       st.write("  ")
       
       
-      if tgp_result_home >= 0:
+      if results["tgp_result_home"] >= 0:
                     st.markdown(f"""
-                            <div style="font-size:35px; font-weight:bold; color:{winning_color}; text-align:center;">
-                                {home_team} wins by {tgp_result_home}!
+                            <div style="font-size:35px; font-weight:bold; color:{results["winning_color"]}; text-align:center;">
+                                {home_team} wins by {results["tgp_result_home"]}!
                             </div>
                         """, unsafe_allow_html=True)
       else:
                     st.markdown(f"""
-                            <div style="font-size:35px; font-weight:bold; color:{winning_color}; text-align:center;">
-                                {away_team} wins by {tgp_result_away}!
+                            <div style="font-size:35px; font-weight:bold; color:{results["winning_color"]}; text-align:center;">
+                                {away_team} wins by {results["tgp_result_away"]}!
                             </div>
                         """, unsafe_allow_html=True)
                 
@@ -565,7 +1333,7 @@ def game_predictor_page():
     
 # Sidebar navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ("Home", "Betting Accuracy", "This Week", "The Playoff", "Game Predictor"))
+page = st.sidebar.radio("Go to", ("Home", "Betting Accuracy", "The Playoff", "Game Predictor"))
 
 
 
@@ -575,6 +1343,8 @@ if page == "Home":
     welcome_page()
 elif page == "Betting Accuracy":
     historical_results_page()
+elif page == "The Playoff":
+    playoff_page()
 elif page == "Game Predictor":
     game_predictor_page()
 
