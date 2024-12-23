@@ -626,6 +626,13 @@ def playoff_page():
       
       
   with col3:
+    
+        
+        st.markdown(f"""
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+                1st Round <br>
+            </div>
+        """, unsafe_allow_html=True)
         
         
         # FR1
@@ -846,6 +853,13 @@ def playoff_page():
         
         
   with col5:
+    
+    
+        st.markdown(f"""
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+                Quarters <br>
+            </div>
+        """, unsafe_allow_html=True)
 
 
         # Rose Bowl
@@ -1067,6 +1081,13 @@ def playoff_page():
 
 
   with col7:
+    
+    
+        st.markdown(f"""
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+                Semis <br>
+            </div>
+        """, unsafe_allow_html=True)
 
 
         # Cotton Bowl
@@ -1178,6 +1199,12 @@ def playoff_page():
 
 
   with col9:
+    
+        st.markdown(f"""
+            <div style="font-size:30px; font-weight:bold; text-align:center; line-height:1.75; color:#87CEEB;">
+                Natty <br>
+            </div>
+        """, unsafe_allow_html=True)
 
 
         # National Championship
